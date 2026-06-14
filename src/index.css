@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  /* Ένα απαλό μπλε/κίτρινο background για όλη την εφαρμογή */
+  background-color: #fffbeb; 
+}
+
+#root {
+  /* Μηδενίζουμε τις ρυθμίσεις του Vite */
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
