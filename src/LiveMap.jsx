@@ -3,6 +3,13 @@ import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from './supabaseClient';
+import { useTheme } from './ThemeContext.jsx';
+
+// Tile layer URLs
+const TILES = {
+  dark:  { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',   bg: '#0d0d0d' },
+  light: { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',  bg: '#f8f5f0' },
+};
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -11,7 +18,12 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Ήχος ειδοποίησης (ορίζεται μία φορά εκτός component για επαναχρησιμοποίηση)
+const alertSound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+
 export default function LiveMap() {
+  const { theme } = useTheme();
+  const tile = TILES[theme] ?? TILES.dark;
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [assigningOrderId, setAssigningOrderId] = useState(null);
@@ -88,8 +100,8 @@ export default function LiveMap() {
         
         // ΗΧΗΤΙΚΗ ΕΙΔΟΠΟΙΗΣΗ ΓΙΑ ΝΕΑ ΠΑΡΑΓΓΕΛΙΑ
         if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
-          const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-          audio.play().catch(e => console.log('Το αυτόματο play μπλοκαρίστηκε από τον browser:', e));
+          alertSound.currentTime = 0; // Επαναφορά στην αρχή του ήχου
+          alertSound.play().catch(e => console.log('Το αυτόματο play μπλοκαρίστηκε από τον browser:', e));
         }
       }).subscribe();
 
@@ -166,14 +178,18 @@ export default function LiveMap() {
   const centerPosition = [40.7819, 21.4098];
 
   return (
-    <div className="font-sans">
+    <div className="font-sans" style={{ color: 'var(--text-primary)' }}>
       
       {/* 1. ΠΑΝΩ ΜΕΡΟΣ: ΧΑΡΤΗΣ */}
-      <div className="h-[280px] md:h-[380px] w-full rounded-2xl overflow-hidden border border-slate-300 shadow-lg mb-4 md:mb-6 z-0 relative">
-        <MapContainer center={centerPosition} zoom={14} className="h-full w-full">
+      <div
+        className="h-[280px] md:h-[380px] w-full rounded-2xl overflow-hidden mb-4 md:mb-6 z-0 relative"
+        style={{ border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-md)' }}
+      >
+        <MapContainer center={centerPosition} zoom={14} className="h-full w-full" style={{ background: tile.bg }}>
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            key={tile.url}
+            url={tile.url}
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
           />
           
           {drivers.map(driver => {
@@ -223,36 +239,36 @@ export default function LiveMap() {
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         
         {/* ΚΑΡΤΑ 1: Νέες Παραγγελίες */}
-        <div className="flex-1 bg-white border border-slate-300 border-l-4 border-l-orange-500 rounded-2xl p-4 shadow-lg hover:shadow-xl transition-shadow duration-300 min-h-auto md:min-h-[200px]">
+        <div className="flex-1 bg-[#1A1A1A]/90 backdrop-blur-md border border-[#C5A066]/40 border-l-4 border-l-[#C5A066] rounded-2xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:shadow-[0_8px_30px_rgba(197,160,102,0.15)] transition-shadow duration-300 min-h-auto md:min-h-[200px]">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="m-0 text-slate-700 text-[15px] font-bold flex items-center gap-1.5">
-              <span className="text-orange-500">🔍</span> Νέες (Σε Εκκρεμότητα)
+            <h3 className="m-0 text-slate-200 text-[15px] font-bold flex items-center gap-1.5">
+              <span className="text-[#C5A066]">🔍</span> Νέες (Σε Εκκρεμότητα)
             </h3>
-            <span className="bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full font-bold text-[13px]">
+            <span className="bg-[#C5A066]/10 text-[#C5A066] border border-[#C5A066]/30 px-2.5 py-1 rounded-full font-bold text-[13px] drop-shadow-[0_0_5px_rgba(197,160,102,0.5)]">
               {pendingOrders.length}
             </span>
           </div>
           
           <div className="max-h-[200px] md:max-h-[250px] overflow-y-auto text-[13px] pr-1">
             {pendingOrders.length === 0 ? (
-              <p className="text-slate-400 italic mt-2 text-sm">Δεν υπάρχουν εκκρεμείς παραγγελίες.</p>
+              <p className="text-slate-500 italic mt-2 text-sm">Δεν υπάρχουν εκκρεμείς παραγγελίες.</p>
             ) : (
               pendingOrders.map(order => {
                 const isLate = (currentTime.getTime() - new Date(order.created_at).getTime()) > 300000;
                 return (
-                <div key={order.id} className="py-2.5 border-b border-slate-100 last:border-0">
+                <div key={order.id} className="py-2.5 border-b border-[#C5A066]/10 last:border-0">
                   <div className="flex justify-between items-start flex-wrap gap-2.5">
-                    <div className="text-slate-800 leading-relaxed flex-1">
-                      🏢 <span className="font-bold">{order.stores?.name}</span> <br/> 
-                      📍 <span className="text-slate-600">{order.address}</span> <br/>
+                    <div className="text-slate-300 leading-relaxed flex-1">
+                      🏢 <span className="font-bold text-slate-200">{order.stores?.name}</span> <br/> 
+                      📍 <span className="text-slate-400">{order.address}</span> <br/>
                       
                       {order.comments && (
-                        <div className="mt-1 text-[11px] text-slate-600 bg-amber-50 border border-amber-200 p-1.5 rounded">
-                          📝 <b>Σχόλια:</b> {order.comments}
+                        <div className="mt-1 text-[11px] text-slate-300 bg-[#C5A066]/5 border border-[#C5A066]/20 p-1.5 rounded">
+                          📝 <b className="text-[#C5A066]">Σχόλια:</b> {order.comments}
                         </div>
                       )}
                       
-                      <span className={`text-[11px] font-bold inline-block mt-1 ${isLate ? 'text-red-600' : 'text-orange-500'}`}>
+                      <span className={`text-[11px] font-bold inline-block mt-1 ${isLate ? 'text-[#9D4EDD] drop-shadow-[0_0_3px_rgba(157,78,221,0.5)]' : 'text-[#C5A066]'}`}>
                         ⏱️ Σε αναμονή: {getElapsedTime(order.created_at)}
                       </span>
                     </div>
@@ -261,7 +277,7 @@ export default function LiveMap() {
                       {/* Κουμπί Ακύρωσης Εκκρεμούς */}
                       <button 
                         onClick={() => cancelOrder(order.id)}
-                        className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 px-3 rounded-lg cursor-pointer font-bold text-xs transition-colors"
+                        className="bg-[#050505] text-[#9D4EDD] hover:shadow-[inset_0_0_10px_rgba(157,78,221,0.4)] border border-[#9D4EDD]/40 py-2 px-3 rounded-lg cursor-pointer font-bold text-xs transition-all"
                         title="Ακύρωση Παραγγελίας"
                       >
                         ✖
@@ -270,7 +286,7 @@ export default function LiveMap() {
                       {/* Κουμπί Ανάθεσης */}
                       <button 
                         onClick={() => setAssigningOrderId(assigningOrderId === order.id ? null : order.id)}
-                        className="bg-orange-500 hover:bg-orange-600 text-white border-none py-2 px-3 rounded-lg cursor-pointer font-bold text-xs shadow-sm transition-colors"
+                        className="bg-[#050505] text-[#C5A066] border border-[#C5A066]/50 hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] py-2 px-3 rounded-lg cursor-pointer font-bold text-xs shadow-[0_0_8px_rgba(197,160,102,0.1)] transition-all"
                       >
                         {assigningOrderId === order.id ? 'Κλείσιμο' : 'Ανάθεση'}
                       </button>
@@ -278,23 +294,23 @@ export default function LiveMap() {
                   </div>
                   
                   {assigningOrderId === order.id && (
-                    <div className="mt-2.5 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="m-0 mb-2 text-xs font-bold text-slate-700">Επιλογή Διανομέα:</p>
+                    <div className="mt-2.5 p-2.5 bg-[#111111] rounded-lg border border-[#C5A066]/30">
+                      <p className="m-0 mb-2 text-xs font-bold text-[#C5A066]">Επιλογή Διανομέα:</p>
                       {drivers.length === 0 ? (
-                        <p className="text-red-600 text-[11px] m-0">Κανένας διανομέας δεν είναι online.</p>
+                        <p className="text-[#9D4EDD] text-[11px] m-0">Κανένας διανομέας δεν είναι online.</p>
                       ) : (
                         drivers.map(driver => {
                           const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
                           let statusBadge;
                           if (activeCount > 0) {
-                            statusBadge = <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold text-[10px]">Κρατάει ({activeCount})</span>;
+                            statusBadge = <span className="bg-[#C5A066]/10 text-[#C5A066] border border-[#C5A066]/30 px-1.5 py-0.5 rounded font-bold text-[10px]">Κρατάει ({activeCount})</span>;
                           } else {
                             const lastTime = lastCompletedTimes[driver.id];
                             if (lastTime) {
                               const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
-                              statusBadge = <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold text-[10px]">Ελεύθερος ({diffMins} λ.)</span>;
+                              statusBadge = <span className="bg-[#38EF7D]/10 text-[#38EF7D] border border-[#38EF7D]/30 px-1.5 py-0.5 rounded font-bold text-[10px]">Ελεύθερος ({diffMins} λ.)</span>;
                             } else {
-                              statusBadge = <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold text-[10px]">Ελεύθερος</span>;
+                              statusBadge = <span className="bg-[#38EF7D]/10 text-[#38EF7D] border border-[#38EF7D]/30 px-1.5 py-0.5 rounded font-bold text-[10px]">Ελεύθερος</span>;
                             }
                           }
 
@@ -302,9 +318,9 @@ export default function LiveMap() {
                             <button
                               key={driver.id}
                               onClick={() => assignOrderToDriver(order.id, driver.id)}
-                              className="flex justify-between items-center w-full text-left p-2 mb-1 bg-white hover:bg-blue-50 border border-slate-200 rounded-md cursor-pointer text-blue-500 text-xs transition-colors"
+                              className="flex justify-between items-center w-full text-left p-2 mb-1 bg-[#181818] hover:bg-[#252525] border border-[#C5A066]/30 rounded-md cursor-pointer text-slate-200 text-xs transition-colors"
                             >
-                              <span className="font-bold">🛵 {driver.full_name}</span>
+                              <span className="font-bold">🛵 <span className="text-slate-300">{driver.full_name}</span></span>
                               {statusBadge}
                             </button>
                           );
@@ -319,45 +335,45 @@ export default function LiveMap() {
         </div>
 
         {/* ΚΑΡΤΑ 2: Ενεργές Παραγγελίες */}
-        <div className="flex-1 bg-white border border-slate-300 border-l-4 border-l-blue-500 rounded-2xl p-4 shadow-lg hover:shadow-xl transition-shadow duration-300 min-h-auto md:min-h-[200px]">
+        <div className="flex-1 bg-[#1A1A1A]/90 backdrop-blur-md border border-[#C5A066]/40 border-l-4 border-l-[#38EF7D] rounded-2xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:shadow-[0_8px_30px_rgba(56,239,125,0.15)] transition-shadow duration-300 min-h-auto md:min-h-[200px]">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="m-0 text-slate-700 text-[15px] font-bold flex items-center gap-1.5">
-              <span className="text-blue-500">🛵</span> Σε Εξέλιξη
+            <h3 className="m-0 text-slate-200 text-[15px] font-bold flex items-center gap-1.5">
+              <span className="text-[#38EF7D] drop-shadow-[0_0_5px_rgba(56,239,125,0.6)]">🛵</span> Σε Εξέλιξη
             </h3>
-            <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-bold text-[13px]">
+            <span className="bg-[#38EF7D]/10 text-[#38EF7D] border border-[#38EF7D]/30 px-2.5 py-1 rounded-full font-bold text-[13px] drop-shadow-[0_0_5px_rgba(56,239,125,0.5)]">
               {acceptedOrders.length}
             </span>
           </div>
           
           <div className="max-h-[200px] md:max-h-[250px] overflow-y-auto text-[13px] pr-1">
             {acceptedOrders.length === 0 ? (
-              <p className="text-slate-400 italic mt-2 text-sm">Δεν υπάρχουν ενεργές διανομές αυτή τη στιγμή.</p>
+              <p className="text-slate-500 italic mt-2 text-sm">Δεν υπάρχουν ενεργές διανομές αυτή τη στιγμή.</p>
             ) : (
               acceptedOrders.map(order => (
-                <div key={order.id} className="py-2.5 border-b border-slate-100 last:border-0 flex justify-between items-start flex-wrap gap-2">
-                  <div className="text-slate-800 leading-relaxed flex-1">
-                    🏢 <span className="font-bold">{order.stores?.name}</span> ➔ 📍 <span className="text-slate-600">{order.address}</span>
+                <div key={order.id} className="py-2.5 border-b border-[#C5A066]/10 last:border-0 flex justify-between items-start flex-wrap gap-2">
+                  <div className="text-slate-300 leading-relaxed flex-1">
+                    🏢 <span className="font-bold text-slate-200">{order.stores?.name}</span> ➔ 📍 <span className="text-slate-400">{order.address}</span>
                     
                     {order.comments && (
-                      <div className="mt-1 text-[11px] text-slate-600 bg-amber-50 border border-amber-200 p-1.5 rounded block">
-                        📝 <b>Σχόλια:</b> {order.comments}
+                      <div className="mt-1 text-[11px] text-slate-300 bg-[#C5A066]/5 border border-[#C5A066]/20 p-1.5 rounded block">
+                        📝 <b className="text-[#C5A066]">Σχόλια:</b> {order.comments}
                       </div>
                     )}
 
-                    <div className="mt-1 text-[11px] text-slate-500 bg-slate-50 px-2 py-1 rounded-md inline-block border border-slate-100">
-                      👤 Οδηγός: <b className="text-blue-500">{order.drivers?.full_name}</b>
+                    <div className="mt-1 text-[11px] text-[#38EF7D] bg-[#38EF7D]/5 px-2 py-1 rounded-md inline-block border border-[#38EF7D]/20">
+                      👤 Οδηγός: <b className="text-[#38EF7D]">{order.drivers?.full_name}</b>
                     </div>
                   </div>
                   
                   <div className="text-right flex flex-col items-end gap-1">
-                    <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">
+                    <span className="text-[11px] font-bold text-[#C5A066] bg-[#C5A066]/10 border border-[#C5A066]/20 px-2 py-1 rounded-md">
                       ⏱️ {getElapsedTime(order.created_at)}
                     </span>
                     <div className="flex gap-2 mt-1">
                       {/* Κουμπί Ολοκλήρωσης Ενεργής */}
                       <button 
                         onClick={() => completeOrder(order.id)}
-                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-colors"
+                        className="bg-[#050505] hover:shadow-[inset_0_0_10px_rgba(56,239,125,0.4)] text-[#38EF7D] border border-[#38EF7D]/40 py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all"
                         title="Ολοκλήρωση Παραγγελίας"
                       >
                         ✔
@@ -365,7 +381,7 @@ export default function LiveMap() {
                       {/* Κουμπί Ακύρωσης Ενεργής */}
                       <button 
                         onClick={() => cancelOrder(order.id)}
-                        className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-colors"
+                        className="bg-[#050505] hover:shadow-[inset_0_0_10px_rgba(157,78,221,0.4)] text-[#9D4EDD] border border-[#9D4EDD]/40 py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all"
                         title="Ακύρωση Παραγγελίας"
                       >
                         ✖

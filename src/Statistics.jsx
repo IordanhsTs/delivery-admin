@@ -118,41 +118,41 @@ export default function Statistics() {
   };
 
   return (
-    <div className="font-sans">
+    <div className="font-sans text-slate-200">
       <div className="mb-6">
-        <h2 className="m-0 mb-1 text-slate-800 text-xl font-bold">📈 Στατιστικά & Απόδοση</h2>
-        <p className="m-0 text-slate-500 text-sm">Ανάλυση χρόνων παράδοσης με δυνατότητα εξειδικευμένου φιλτραρίσματος.</p>
+        <h2 className="m-0 mb-1 text-[#C5A066] text-xl font-bold drop-shadow-[0_0_8px_rgba(197,160,102,0.5)] tracking-wide">📈 Στατιστικά & Απόδοση</h2>
+        <p className="m-0 text-slate-400 text-sm">Ανάλυση χρόνων παράδοσης με δυνατότητα εξειδικευμένου φιλτραρίσματος.</p>
       </div>
 
       {/* Πίνακας Ελέγχου (Φίλτρα) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 bg-slate-50 p-4 md:p-5 rounded-2xl border border-slate-200 items-end shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 bg-[#1A1A1A]/90 backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 items-end shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
         
         <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-slate-600">Από</label>
+          <label className="text-xs font-bold text-[#C5A066]">Από</label>
           <input 
             type="datetime-local" 
             value={startDate} 
             onChange={e => setStartDate(e.target.value)} 
-            className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-blue-500 transition-colors bg-white text-sm"
+            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-slate-200 transition-colors text-sm"
           />
         </div>
         
         <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-slate-600">Έως</label>
+          <label className="text-xs font-bold text-[#C5A066]">Έως</label>
           <input 
             type="datetime-local" 
             value={endDate} 
             onChange={e => setEndDate(e.target.value)} 
-            className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-blue-500 transition-colors bg-white text-sm"
+            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-slate-200 transition-colors text-sm"
           />
         </div>
 
         <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-slate-600">Κατάστημα</label>
+          <label className="text-xs font-bold text-[#C5A066]">Κατάστημα</label>
           <select 
             value={selectedStore} 
             onChange={e => setSelectedStore(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-blue-500 transition-colors bg-white text-sm cursor-pointer"
+            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-slate-200 transition-colors text-sm cursor-pointer"
           >
             <option value="">Όλα τα καταστήματα</option>
             {storesList.map(store => (
@@ -162,11 +162,11 @@ export default function Statistics() {
         </div>
 
         <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-slate-600">Διανομέας</label>
+          <label className="text-xs font-bold text-[#C5A066]">Διανομέας</label>
           <select 
             value={selectedDriver} 
             onChange={e => setSelectedDriver(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-blue-500 transition-colors bg-white text-sm cursor-pointer"
+            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-slate-200 transition-colors text-sm cursor-pointer"
           >
             <option value="">Όλοι οι διανομείς</option>
             {driversList.map(driver => (
@@ -179,7 +179,7 @@ export default function Statistics() {
           <button 
             onClick={fetchStats} 
             disabled={loading} 
-            className="w-full sm:w-auto px-8 lg:px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white border-none rounded-xl cursor-pointer font-bold transition-colors shadow-sm disabled:opacity-50 h-[42px] flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-8 lg:px-6 py-2.5 bg-[#050505] text-[#C5A066] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] rounded-xl cursor-pointer font-bold transition-all disabled:opacity-50 h-[42px] flex items-center justify-center gap-2"
           >
             {loading ? 'Φόρτωση...' : '🔄 Ανανέωση'}
           </button>
@@ -191,15 +191,15 @@ export default function Statistics() {
         <div className="animate-fade-in">
           {/* Κάρτες KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
-            <div className="p-6 bg-teal-50 border border-teal-200 rounded-2xl text-center shadow-sm relative overflow-hidden">
-              <h3 className="m-0 mb-2 text-teal-800 text-base font-bold relative z-10">⏱️ Μέσος Χρόνος Παράδοσης</h3>
-              <p className="m-0 text-4xl font-black text-teal-900 relative z-10">{kpis.avgTime} <span className="text-xl font-bold">λεπτά</span></p>
-              <small className="text-teal-600 block mt-2 font-medium relative z-10">Από τη δημιουργία έως την πόρτα</small>
+            <div className="p-6 bg-[#1A1A1A]/90 backdrop-blur-md border border-[#38EF7D]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden">
+              <h3 className="m-0 mb-2 text-[#38EF7D] text-base font-bold relative z-10 drop-shadow-[0_0_5px_rgba(56,239,125,0.5)]">⏱️ Μέσος Χρόνος Παράδοσης</h3>
+              <p className="m-0 text-4xl font-black text-slate-100 relative z-10">{kpis.avgTime} <span className="text-xl font-bold text-slate-300">λεπτά</span></p>
+              <small className="text-slate-400 block mt-2 font-medium relative z-10">Από τη δημιουργία έως την πόρτα</small>
             </div>
-            <div className="p-6 bg-purple-50 border border-purple-200 rounded-2xl text-center shadow-sm relative overflow-hidden">
-              <h3 className="m-0 mb-2 text-purple-800 text-base font-bold relative z-10">📦 Συνολικές Παραδόσεις</h3>
-              <p className="m-0 text-4xl font-black text-purple-900 relative z-10">{kpis.totalOrders}</p>
-              <small className="text-purple-600 block mt-2 font-medium relative z-10">Ολοκληρωμένες στο διάστημα</small>
+            <div className="p-6 bg-[#1A1A1A]/90 backdrop-blur-md border border-[#9D4EDD]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden">
+              <h3 className="m-0 mb-2 text-[#9D4EDD] text-base font-bold relative z-10 drop-shadow-[0_0_5px_rgba(157,78,221,0.5)]">📦 Συνολικές Παραδόσεις</h3>
+              <p className="m-0 text-4xl font-black text-slate-100 relative z-10">{kpis.totalOrders}</p>
+              <small className="text-slate-400 block mt-2 font-medium relative z-10">Ολοκληρωμένες στο διάστημα</small>
             </div>
           </div>
 
@@ -208,17 +208,17 @@ export default function Statistics() {
             
             {/* Top Καταστήματα */}
             <div>
-              <h4 className="text-slate-700 mb-4 font-bold text-lg">🏆 {selectedStore ? 'Επιλεγμένο Κατάστημα' : 'Top Καταστήματα (Όγκος)'}</h4>
-              <div className="bg-white rounded-xl border border-slate-200 p-2 shadow-sm">
+              <h4 className="text-[#C5A066] mb-4 font-bold text-lg drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">🏆 {selectedStore ? 'Επιλεγμένο Κατάστημα' : 'Top Καταστήματα (Όγκος)'}</h4>
+              <div className="bg-[#1A1A1A]/90 backdrop-blur-md rounded-xl border border-[#C5A066]/40 p-2 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
                 {kpis.sortedStores.length > 0 ? kpis.sortedStores.map(([store, count], index) => (
                   <div 
                     key={store} 
-                    className={`flex justify-between items-center p-3 md:px-4 md:py-3 ${index !== kpis.sortedStores.length - 1 ? 'border-b border-slate-100' : ''} ${index === 0 && !selectedStore ? 'bg-orange-50 rounded-lg' : 'hover:bg-slate-50 transition-colors'}`}
+                    className={`flex justify-between items-center p-3 md:px-4 md:py-3 ${index !== kpis.sortedStores.length - 1 ? 'border-b border-[#C5A066]/10' : ''} ${index === 0 && !selectedStore ? 'bg-[#C5A066]/10 rounded-lg' : 'hover:bg-[#252525] transition-colors'}`}
                   >
-                    <span className={`text-slate-800 ${index === 0 && !selectedStore ? 'font-bold' : ''}`}>
+                    <span className={`text-slate-200 ${index === 0 && !selectedStore ? 'font-bold text-[#C5A066]' : ''}`}>
                       {selectedStore ? store : `${index + 1}. ${store}`}
                     </span>
-                    <span className="font-bold text-orange-700 bg-orange-100 px-2.5 py-1 rounded-full text-xs whitespace-nowrap">
+                    <span className="font-bold text-[#C5A066] bg-[#C5A066]/10 border border-[#C5A066]/30 px-2.5 py-1 rounded-full text-xs whitespace-nowrap">
                       {count} παρ.
                     </span>
                   </div>
@@ -230,18 +230,18 @@ export default function Statistics() {
 
             {/* Επίδοση Διανομέων */}
             <div>
-              <h4 className="text-slate-700 mb-4 font-bold text-lg">🛵 {selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων (Χρόνοι)'}</h4>
-              <div className="bg-white rounded-xl border border-slate-200 p-2 shadow-sm">
+              <h4 className="text-[#C5A066] mb-4 font-bold text-lg drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">🛵 {selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων (Χρόνοι)'}</h4>
+              <div className="bg-[#1A1A1A]/90 backdrop-blur-md rounded-xl border border-[#C5A066]/40 p-2 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
                 {kpis.sortedDrivers.length > 0 ? kpis.sortedDrivers.map((driver, index) => (
                   <div 
                     key={driver.name} 
-                    className={`flex justify-between items-center p-3 md:px-4 md:py-3 ${index !== kpis.sortedDrivers.length - 1 ? 'border-b border-slate-100' : ''} hover:bg-slate-50 transition-colors`}
+                    className={`flex justify-between items-center p-3 md:px-4 md:py-3 ${index !== kpis.sortedDrivers.length - 1 ? 'border-b border-[#C5A066]/10' : ''} hover:bg-[#252525] transition-colors`}
                   >
-                    <span className="text-slate-800">
+                    <span className="text-slate-200">
                       {selectedDriver ? <b>{driver.name}</b> : <>{index + 1}. <b>{driver.name}</b></>} 
                       <span className="text-slate-400 text-xs ml-1">({driver.deliveries} παρ.)</span>
                     </span>
-                    <span className={`font-bold px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driver.avg < 15 ? 'text-emerald-700 bg-emerald-100' : (driver.avg > 25 ? 'text-red-700 bg-red-100' : 'text-orange-700 bg-orange-100')}`}>
+                    <span className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driver.avg < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (driver.avg > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
                       {driver.avg} λ.
                     </span>
                   </div>
@@ -254,10 +254,10 @@ export default function Statistics() {
           </div>
 
           {/* Κουμπί Εμφάνισης/Απόκρυψης Ιστορικού */}
-          <div className="border-t border-slate-200 pt-8 pb-4 text-center">
+          <div className="border-t border-[#C5A066]/30 pt-8 pb-4 text-center">
             <button 
               onClick={() => setShowHistory(!showHistory)}
-              className="bg-white border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-3 px-6 rounded-xl cursor-pointer transition-all shadow-sm"
+              className="bg-[#050505] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] text-[#C5A066] font-bold py-3 px-6 rounded-xl cursor-pointer transition-all"
             >
               {showHistory ? '🔼 Απόκρυψη Ιστορικού' : '📄 Προβολή Αναλυτικού Ιστορικού'}
             </button>
@@ -265,43 +265,43 @@ export default function Statistics() {
 
           {/* Αναλυτικό Ιστορικό Παραγγελιών */}
           {showHistory && (
-            <div className="animate-fade-in bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-2">
-              <div className="bg-slate-50 border-b border-slate-200 p-4">
-                <h4 className="m-0 text-slate-700 font-bold">Αναλυτικές Παραγγελίες ({orders.length})</h4>
+            <div className="animate-fade-in bg-[#1A1A1A]/90 backdrop-blur-md rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)] overflow-hidden mt-2">
+              <div className="bg-[#111111] border-b border-[#C5A066]/40 p-4">
+                <h4 className="m-0 text-[#C5A066] font-bold drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">Αναλυτικές Παραγγελίες ({orders.length})</h4>
               </div>
               
               {/* Desktop Table (Hidden on mobile) */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                    <tr className="bg-[#111111] text-slate-400 text-xs uppercase tracking-wider border-b border-[#C5A066]/40">
                       <th className="p-4 font-bold">Ημερ/νια</th>
                       <th className="p-4 font-bold">Κατάστημα & Διεύθυνση</th>
                       <th className="p-4 font-bold">Διανομέας</th>
                       <th className="p-4 font-bold text-center">Χρόνος (Λεπτά)</th>
                     </tr>
                   </thead>
-                  <tbody className="text-sm divide-y divide-slate-100">
+                  <tbody className="text-sm divide-y divide-[#C5A066]/10">
                     {orders.map(order => {
                       const mins = order.created_at && order.completed_at 
                         ? Math.floor((new Date(order.completed_at) - new Date(order.created_at)) / 60000) 
                         : '-';
                       
                       return (
-                        <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4 text-slate-600">
+                        <tr key={order.id} className="hover:bg-[#252525] transition-colors">
+                          <td className="p-4 text-slate-400">
                             <div className="font-bold">{formatDate(order.created_at)}</div>
                             <div className="text-xs">{formatTime(order.created_at)}</div>
                           </td>
                           <td className="p-4">
-                            <div className="font-bold text-slate-800">{order.stores?.name}</div>
-                            <div className="text-slate-500 text-xs mt-0.5">📍 {order.address || 'Μη διαθέσιμη διεύθυνση'}</div>
+                            <div className="font-bold text-slate-200">{order.stores?.name}</div>
+                            <div className="text-slate-500 text-xs mt-0.5">📍 <span className="text-slate-400">{order.address || 'Μη διαθέσιμη διεύθυνση'}</span></div>
                           </td>
-                          <td className="p-4 text-slate-700 font-medium">
+                          <td className="p-4 text-slate-300 font-medium">
                             {order.drivers?.full_name}
                           </td>
                           <td className="p-4 text-center">
-                            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold ${mins < 15 ? 'bg-emerald-100 text-emerald-700' : (mins > 25 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700')}`}>
+                            <span className={`inline-block border px-2.5 py-1 rounded-full text-xs font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
                               {mins} λ.
                             </span>
                           </td>
@@ -313,22 +313,22 @@ export default function Statistics() {
               </div>
 
               {/* Mobile List (Hidden on desktop) */}
-              <div className="md:hidden flex flex-col divide-y divide-slate-100">
+              <div className="md:hidden flex flex-col divide-y divide-[#C5A066]/10">
                 {orders.map(order => {
                   const mins = order.created_at && order.completed_at 
                     ? Math.floor((new Date(order.completed_at) - new Date(order.created_at)) / 60000) 
                     : '-';
                   
                   return (
-                    <div key={order.id} className="p-4 hover:bg-slate-50">
+                    <div key={order.id} className="p-4 hover:bg-[#252525]">
                       <div className="flex justify-between items-start mb-2">
-                        <div className="font-bold text-slate-800 text-[15px]">{order.stores?.name}</div>
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${mins < 15 ? 'bg-emerald-100 text-emerald-700' : (mins > 25 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700')}`}>
+                        <div className="font-bold text-slate-200 text-[15px]">{order.stores?.name}</div>
+                        <span className={`border px-2 py-0.5 rounded text-[11px] font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
                           {mins} λεπτά
                         </span>
                       </div>
-                      <div className="text-slate-600 text-sm mb-2">📍 {order.address || 'Μη διαθέσιμη διεύθυνση'}</div>
-                      <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+                      <div className="text-slate-400 text-sm mb-2">📍 {order.address || 'Μη διαθέσιμη διεύθυνση'}</div>
+                      <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-[#C5A066]/10">
                         <span>👤 {order.drivers?.full_name}</span>
                         <span>🗓️ {formatDate(order.created_at)} {formatTime(order.created_at)}</span>
                       </div>
@@ -342,9 +342,9 @@ export default function Statistics() {
 
         </div>
       ) : (
-        <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 text-center shadow-sm">
+        <div className="bg-[#1A1A1A]/90 backdrop-blur-md p-8 rounded-2xl border border-[#C5A066]/40 text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
           <p className="text-slate-500 text-lg m-0 mb-2">📭</p>
-          <p className="text-slate-600 font-medium m-0">Δεν βρέθηκαν ολοκληρωμένες παραγγελίες για αυτά τα φίλτρα.</p>
+          <p className="text-[#C5A066] font-medium m-0 drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">Δεν βρέθηκαν ολοκληρωμένες παραγγελίες για αυτά τα φίλτρα.</p>
           <p className="text-slate-400 text-sm m-0 mt-1">Δοκιμάστε να διευρύνετε το χρονικό διάστημα ή να αλλάξετε τις επιλογές σας.</p>
         </div>
       )}

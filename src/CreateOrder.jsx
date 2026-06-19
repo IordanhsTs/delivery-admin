@@ -64,22 +64,22 @@ export default function CreateOrder() {
   };
 
   return (
-    <div className="font-sans max-w-xl mx-auto">
+    <div className="font-sans max-w-xl mx-auto text-slate-200">
       <div className="mb-6">
-        <h2 className="m-0 mb-1 text-slate-800 text-xl font-bold">➕ Δημιουργία Νέας Παραγγελίας</h2>
-        <p className="m-0 text-slate-500 text-sm">Καταχωρήστε μια παραγγελία χειροκίνητα για άμεση ανάθεση ή λήψη από τους διανομείς.</p>
+        <h2 className="m-0 mb-1 text-[#C5A066] text-xl font-bold drop-shadow-[0_0_8px_rgba(197,160,102,0.5)] tracking-wide">➕ Δημιουργία Νέας Παραγγελίας</h2>
+        <p className="m-0 text-slate-400 text-sm">Καταχωρήστε μια παραγγελία χειροκίνητα για άμεση ανάθεση ή λήψη από τους διανομείς.</p>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+      <div className="bg-[#1A1A1A]/90 backdrop-blur-md border border-[#C5A066]/40 rounded-2xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
         <form onSubmit={handleCreateOrder} className="flex flex-col gap-5">
           
           {/* Επιλογή Καταστήματος */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-slate-700 font-bold text-sm">🏢 Επιλογή Καταστήματος</label>
+            <label className="text-[#C5A066] font-bold text-sm">🏢 Επιλογή Καταστήματος</label>
             <select
               value={selectedStoreId}
               onChange={(e) => setSelectedStoreId(e.target.value)}
-              className="p-3 rounded-xl border border-slate-300 outline-none focus:border-blue-500 bg-white text-slate-800 font-medium transition-colors cursor-pointer"
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-white font-medium transition-colors cursor-pointer"
             >
               <option value="">-- Επιλέξτε Κατάστημα --</option>
               {stores.map(store => (
@@ -92,31 +92,31 @@ export default function CreateOrder() {
 
           {/* Διεύθυνση Παράδοσης */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-slate-700 font-bold text-sm">📍 Διεύθυνση Παράδοσης</label>
+            <label className="text-[#C5A066] font-bold text-sm">📍 Διεύθυνση Παράδοσης</label>
             <input
               type="text"
               placeholder="π.χ. Μεγάλου Αλεξάνδρου 45, Φλώρινα"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              className="p-3 rounded-xl border border-slate-300 outline-none focus:border-blue-500 bg-white text-slate-800 transition-colors"
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-white placeholder-slate-600 transition-colors"
             />
           </div>
 
           {/* 4. Νέο Πεδίο για Σχόλια/Οδηγίες */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-slate-700 font-bold text-sm">📝 Σχόλια / Οδηγίες (Προαιρετικό)</label>
+            <label className="text-[#C5A066] font-bold text-sm">📝 Σχόλια / Οδηγίες (Προαιρετικό)</label>
             <textarea
               placeholder="π.χ. Κουδούνι Παπαδόπουλος, όροφος 2ος..."
               value={comments}
               onChange={(e) => setComments(e.target.value)}
               rows="3"
-              className="p-3 rounded-xl border border-slate-300 outline-none focus:border-blue-500 bg-white text-slate-800 transition-colors resize-none"
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 bg-[#050505] text-white placeholder-slate-600 transition-colors resize-none"
             />
           </div>
 
           {/* Μήνυμα Επιτυχίας */}
           {successMessage && (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-xl text-sm font-semibold text-center animate-fade-in">
+            <div className="bg-[#38EF7D]/10 border border-[#38EF7D]/30 text-[#38EF7D] drop-shadow-[0_0_5px_rgba(56,239,125,0.6)] p-3.5 rounded-xl text-sm font-semibold text-center animate-fade-in">
               {successMessage}
             </div>
           )}
@@ -125,7 +125,7 @@ export default function CreateOrder() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-5 border-none rounded-xl cursor-pointer shadow-md shadow-blue-500/20 transition-colors disabled:opacity-50 mt-2 text-base"
+            className="w-full bg-[#050505] border border-[#C5A066]/50 text-[#C5A066] hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] font-bold py-3 px-5 rounded-xl cursor-pointer transition-all disabled:opacity-50 mt-2 text-base"
           >
             {loading ? 'Αποστολή στο σύστημα...' : '📣 Προώθηση Παραγγελίας'}
           </button>
