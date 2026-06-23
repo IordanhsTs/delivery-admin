@@ -75,6 +75,7 @@
 
 /* === DARK THEME === */
 html.dark {
+  color-scheme: dark;
   /* 60% — Deep base */
   --bg-primary:    #0D0D0D;
   --bg-secondary:  #161616;
@@ -153,10 +154,10 @@ body {
    Custom Scrollbar
    ============================================ */
 
-::-webkit-scrollbar        { width: 6px; height: 6px; }
-::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-thumb  { background: var(--border-default); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar        { width: 8px; height: 8px; }
+::-webkit-scrollbar-track  { background: var(--bg-primary); border-radius: 99px; }
+::-webkit-scrollbar-thumb  { background: var(--border-default); border-radius: 99px; border: 2px solid var(--bg-primary); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
 /* ============================================
    Focus Ring
@@ -218,3 +219,62 @@ body {
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-md);
 }
+/* === GLOBAL THEME CLASSES === */
+.card-glass {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
+}
+html.dark .card-glass {
+  background-color: rgba(26, 26, 26, 0.9) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+}
+.table-header-glass {
+  background-color: #F8F9FA !important;
+  color: #1E1A14 !important;
+}
+html.dark .table-header-glass {
+  background-color: #111111 !important;
+  color: #C5A066 !important;
+}
+.text-adaptive {
+  color: #475569 !important;
+}
+html.dark .text-adaptive {
+  color: #94a3b8 !important;
+}
+.text-adaptive-light {
+  color: #1e293b !important;
+}
+html.dark .text-adaptive-light {
+  color: #e2e8f0 !important;
+}
+
+.input-glass {
+  background-color: #FFFFFF !important;
+  color: #1e293b !important;
+}
+html.dark .input-glass {
+  color-scheme: dark !important;
+  background-color: #050505 !important;
+  color: #F0EBE2 !important;
+}
+
+.btn-glass {
+  background-color: #FFFFFF !important;
+}
+html.dark .btn-glass {
+  color-scheme: dark !important;
+  background-color: #050505 !important;
+}
+
+.hover-row-glass:hover {
+  background-color: #F1F5F9 !important;
+}
+html.dark .hover-row-glass:hover {
+  background-color: #252525 !important;
+}
+
+/* Fix for date picker icon in dark mode */
+
+
+

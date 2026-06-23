@@ -1,15 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { Megaphone, Send, ChevronDown } from 'lucide-react';
+import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 export default function Messages() {
   const [targetType, setTargetType] = useState('store'); // 'store' or 'driver'
-  const [targetId, setTargetId] = useState('all'); // 'all' or specific ID
+  const [selectedTargets, setSelectedTargets] = useState(['all']);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [message, setMessage] = useState('');
+
+  const toggleTarget = (id) => {
+    if (id === 'all') {
+      setSelectedTargets(['all']);
+    } else {
+      let newTargets = selectedTargets.filter(t => t !== 'all');
+      if (newTargets.includes(id)) {
+        newTargets = newTargets.filter(t => t !== id);
+      } else {
+        newTargets.push(id);
+      }
+      if (newTargets.length === 0) newTargets = ['all'];
+      setSelectedTargets(newTargets);
+    }
+  };
   
   const [stores, setStores] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState({ type: '', text: '' }); // type: 'success' | 'error'
   const [broadcastChannel, setBroadcastChannel] = useState(null);
 
   useEffect(() => {
@@ -39,21 +57,20 @@ export default function Messages() {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim()) {
-      setFeedback({ type: 'error', text: 'Παρακαλώ πληκτρολογήστε ένα μήνυμα.' });
+      toast.error('Παρακαλώ πληκτρολογήστε ένα μήνυμα.');
       return;
     }
     if (!broadcastChannel) {
-      setFeedback({ type: 'error', text: 'Αποτυχία σύνδεσης στο σύστημα μηνυμάτων. Ανανεώστε τη σελίδα.' });
+      toast.error('Αποτυχία σύνδεσης στο σύστημα μηνυμάτων. Ανανεώστε τη σελίδα.');
       return;
     }
 
     setLoading(true);
-    setFeedback({ type: '', text: '' });
 
     try {
       const payload = {
         target_type: targetType,
-        target_id: targetId,
+        target_ids: selectedTargets,
         message: message.trim(),
         timestamp: new Date().toISOString()
       };
@@ -66,21 +83,16 @@ export default function Messages() {
       });
 
       if (response === 'ok') {
-        setFeedback({ type: 'success', text: 'Το μήνυμα εστάλη επιτυχώς!' });
+        toast.success('Το μήνυμα εστάλη επιτυχώς!');
         setMessage('');
       } else {
-        setFeedback({ type: 'error', text: `Αποτυχία αποστολής (${response}). Ελέγξτε τη σύνδεσή σας.` });
+        toast.error(`Αποτυχία αποστολής (${response}). Ελέγξτε τη σύνδεσή σας.`);
       }
     } catch (err) {
       console.error(err);
-      setFeedback({ type: 'error', text: 'Παρουσιάστηκε σφάλμα κατά την αποστολή.' });
+      toast.error('Παρουσιάστηκε σφάλμα κατά την αποστολή.');
     } finally {
       setLoading(false);
-      
-      // Καθαρισμός του μηνύματος επιτυχίας μετά από 5 δευτερόλεπτα
-      setTimeout(() => {
-        setFeedback(prev => prev.type === 'success' ? { type: '', text: '' } : prev);
-      }, 5000);
     }
   };
 
@@ -92,11 +104,19 @@ export default function Messages() {
   });
 
   return (
-    <div className="font-sans" style={{ color: 'var(--text-primary)' }}>
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      className="font-sans" 
+      style={{ color: 'var(--text-primary)' }}
+    >
       <div className="mb-6">
-        <h2 className="m-0 mb-1 text-xl font-bold tracking-wide" style={{ color: 'var(--accent)' }}>
-          📢 Αποστολή Μηνυμάτων
-        </h2>
+        <div className="flex items-center gap-2 mb-1">
+          <Megaphone className="text-[#C5A066]" size={24} />
+          <h2 className="m-0 text-xl font-bold tracking-wide" style={{ color: 'var(--accent)' }}>
+            Αποστολή Μηνυμάτων
+          </h2>
+        </div>
         <p className="m-0 text-sm" style={{ color: 'var(--text-muted)' }}>
           Στείλτε ζωντανές ειδοποιήσεις στα Καταστήματα ή τους Διανομείς.
         </p>
@@ -124,7 +144,7 @@ export default function Messages() {
                   name="targetType" 
                   value="store" 
                   checked={targetType === 'store'} 
-                  onChange={() => { setTargetType('store'); setTargetId('all'); }}
+                  onChange={() => { setTargetType('store'); setSelectedTargets(['all']); }}
                   className="w-4 h-4 accent-[#C5A066]"
                 />
                 <span className="font-medium" style={{ color: targetType === 'store' ? 'var(--accent)' : 'var(--text-secondary)' }}>Καταστήματα</span>
@@ -136,7 +156,7 @@ export default function Messages() {
                   name="targetType" 
                   value="driver" 
                   checked={targetType === 'driver'} 
-                  onChange={() => { setTargetType('driver'); setTargetId('all'); }}
+                  onChange={() => { setTargetType('driver'); setSelectedTargets(['all']); }}
                   className="w-4 h-4 accent-[#C5A066]"
                 />
                 <span className="font-medium" style={{ color: targetType === 'driver' ? 'var(--accent)' : 'var(--text-secondary)' }}>Διανομείς</span>
@@ -144,23 +164,54 @@ export default function Messages() {
             </div>
           </div>
 
-          {/* 2. Επιλογή Συγκεκριμένου ή Όλων */}
-          <div className="flex flex-col gap-2">
+          {/* 2. Επιλογή Συγκεκριμένου ή Όλων (Πολλαπλή Επιλογή) */}
+          <div className="flex flex-col gap-2 relative">
             <label className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              2. Ποιοι θα το δουν;
+              2. Ποιοι θα το δουν; (Επιλέξτε ένα ή περισσότερα)
             </label>
-            <select 
-              value={targetId} 
-              onChange={e => setTargetId(e.target.value)}
-              className={inputClass}
+            
+            <div 
+              className={`flex items-center justify-between cursor-pointer ${inputClass}`}
               style={getDynamicInputStyle()}
+              onClick={() => setDropdownOpen(!dropdownOpen)}
             >
-              <option value="all">Όλοι οι {targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}</option>
-              {targetType === 'store' 
-                ? stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
-                : drivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)
-              }
-            </select>
+              <span className="truncate">
+                {selectedTargets.includes('all') 
+                  ? `Όλοι οι ${targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}` 
+                  : `${selectedTargets.length} επιλεγμένοι παραλήπτες`
+                }
+              </span>
+              <ChevronDown size={18} className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+
+            {dropdownOpen && (
+              <div 
+                className="absolute top-full left-0 right-0 mt-2 z-20 flex flex-col gap-1.5 max-h-60 overflow-y-auto p-3 rounded-xl border text-sm shadow-xl"
+                style={{ ...getDynamicInputStyle(), backgroundColor: 'var(--bg-card)' }}
+              >
+                <label className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedTargets.includes('all')} 
+                    onChange={() => toggleTarget('all')}
+                    className="w-4 h-4 accent-[#C5A066]"
+                  />
+                  <span className="font-semibold text-[var(--text-primary)]">Όλοι οι {targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}</span>
+                </label>
+                
+                {(targetType === 'store' ? stores : drivers).map(entity => (
+                  <label key={entity.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedTargets.includes(entity.id)} 
+                      onChange={() => toggleTarget(entity.id)}
+                      className="w-4 h-4 accent-[#C5A066]"
+                    />
+                    <span className="text-[var(--text-primary)]">{entity.name || entity.full_name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 3. Μήνυμα */}
@@ -178,19 +229,7 @@ export default function Messages() {
             />
           </div>
 
-          {/* Feedback (Success/Error) */}
-          {feedback.text && (
-            <div 
-              className="p-3 rounded-xl text-sm font-medium animate-fade-in text-center"
-              style={{
-                backgroundColor: feedback.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
-                color: feedback.type === 'success' ? 'var(--success)' : 'var(--danger)',
-                border: `1px solid ${feedback.type === 'success' ? 'var(--success-border)' : 'var(--danger-border)'}`
-              }}
-            >
-              {feedback.text}
-            </div>
-          )}
+
 
           {/* Submit Button */}
           <button 
@@ -211,10 +250,7 @@ export default function Messages() {
               </>
             ) : (
               <>
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m22 2-7 20-4-9-9-4Z"/>
-                  <path d="M22 2 11 13"/>
-                </svg>
+                <Send size={18} />
                 Αποστολή Μηνύματος
               </>
             )}
@@ -222,6 +258,6 @@ export default function Messages() {
 
         </form>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -8,6 +8,8 @@ import Statistics from './Statistics';
 import CreateOrder from './CreateOrder';
 import Messages from './Messages';
 import Login from './Login';
+import { Toaster } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ── Lucide-style inline SVG icons (matches store-web-app exactly) ──────────
 const SunIcon = () => (
@@ -198,6 +200,7 @@ export default function App() {
       className="flex flex-col md:flex-row h-screen overflow-hidden"
       style={{ backgroundColor: 'var(--bg-primary)', fontFamily: 'Inter, sans-serif' }}
     >
+      <Toaster position="top-right" theme={isDark ? 'dark' : 'light'} richColors />
       {/* ══════════════════════════════
           SIDEBAR
       ══════════════════════════════ */}
@@ -423,7 +426,18 @@ export default function App() {
         />
 
         <div className="relative z-[1] p-4 md:p-8 min-h-full">
-          {VIEW_COMPONENTS[activeTab]}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="h-full"
+            >
+              {VIEW_COMPONENTS[activeTab]}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>
