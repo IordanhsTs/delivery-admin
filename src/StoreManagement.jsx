@@ -26,6 +26,9 @@ export default function StoreManagement() {
   const [newCourierPhone, setNewCourierPhone] = useState('');
   const [newCourierEmail, setNewCourierEmail] = useState('');
   const [newCourierPassword, setNewCourierPassword] = useState('');
+  
+  const [editingCourier, setEditingCourier] = useState(null);
+  const [editCourierData, setEditCourierData] = useState({ full_name: '', phone: '', email: '' });
 
   useEffect(() => { 
     if (activeTab === 'stores') {
@@ -148,6 +151,41 @@ export default function StoreManagement() {
     }
   };
 
+  const saveCourierDetails = async (courierId) => {
+    const { error } = await supabase
+      .from('drivers')
+      .update({
+        full_name: editCourierData.full_name,
+        phone: editCourierData.phone,
+        email: editCourierData.email,
+      })
+      .eq('id', courierId);
+      
+    if (error) {
+      toast.error("Σφάλμα κατά την αποθήκευση στοιχείων.");
+      console.error(error);
+    } else {
+      toast.success("Τα στοιχεία του διανομέα ενημερώθηκαν!");
+      setEditingCourier(null);
+      fetchCouriers();
+    }
+  };
+
+  const toggleBlockedStatus = async (id, table, currentStatus) => {
+    const { error } = await supabase
+      .from(table)
+      .update({ is_blocked: !currentStatus })
+      .eq('id', id);
+    if (error) {
+      toast.error("Σφάλμα κατά την αλλαγή κατάστασης μπλοκαρίσματος.");
+      console.error(error);
+    } else {
+      toast.success(table === 'stores' ? "Η κατάσταση του καταστήματος ενημερώθηκε." : "Η κατάσταση του οδηγού ενημερώθηκε.");
+      if (table === 'stores') fetchStores();
+      else fetchCouriers();
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }} 
@@ -267,9 +305,14 @@ export default function StoreManagement() {
                           <button onClick={() => setEditingStore(null)} className="flex-1 md:flex-none btn-glass text-[#9D4EDD] border border-[#9D4EDD]/50 hover:shadow-[inset_0_0_10px_rgba(157,78,221,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><X size={16}/></button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditingStore(store.id); setNewFee(store.delivery_fee || 0); }} className="w-full md:w-auto btn-glass hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] text-[#C5A066] border border-[#C5A066]/30 px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center gap-2">
-                          <Edit2 size={14} /> Επεξεργασία
-                        </button>
+                        <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
+                          <button onClick={() => { setEditingStore(store.id); setNewFee(store.delivery_fee || 0); }} className="flex-1 md:flex-none btn-glass hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] text-[#C5A066] border border-[#C5A066]/30 px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center gap-2">
+                            <Edit2 size={14} /> Επεξεργασία
+                          </button>
+                          <button onClick={() => toggleBlockedStatus(store.id, 'stores', store.is_blocked)} className={`flex-1 md:flex-none px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center border ${store.is_blocked ? 'btn-glass text-[#38EF7D] border-[#38EF7D]/50 hover:shadow-[inset_0_0_15px_rgba(56,239,125,0.4)]' : 'btn-glass text-[#EF4444] border-[#EF4444]/50 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.4)]'}`}>
+                            {store.is_blocked ? 'Ξεμπλοκάρισμα' : 'Μπλοκάρισμα'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -340,25 +383,79 @@ export default function StoreManagement() {
                 {couriers.map(courier => (
                   <div key={courier.id} className="grid grid-cols-1 md:grid-cols-12 items-center gap-3 md:gap-0 bg-transparent p-4 md:px-4 md:py-3 border border-[#C5A066]/20 md:border-0 md:border-b md:border-[#C5A066]/20 rounded-xl md:rounded-none hover-row-glass transition-colors">
                     <div className="col-span-4 flex flex-col md:block">
-                      <span className="font-bold text-adaptive-light text-lg md:text-base flex items-center gap-2"><Bike size={18} /> {courier.full_name}</span>
-                      <span className="text-adaptive text-sm md:hidden mt-1 flex items-center gap-2">
-                        <span className="flex items-center gap-1"><Phone size={12} /> {courier.phone}</span>
-                        <span className="flex items-center gap-1"><Mail size={12} /> {courier.email}</span>
+                      {editingCourier === courier.id ? (
+                        <input type="text" value={editCourierData.full_name} onChange={(e) => setEditCourierData({...editCourierData, full_name: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none mb-2" placeholder="Ονοματεπώνυμο" />
+                      ) : (
+                        <span className="font-bold text-adaptive-light text-lg md:text-base flex items-center gap-2"><Bike size={18} /> {courier.full_name}</span>
+                      )}
+                      
+                      <span className="text-adaptive text-sm md:hidden mt-1 flex flex-col gap-2">
+                        {editingCourier === courier.id ? (
+                          <>
+                            <input type="text" value={editCourierData.phone} onChange={(e) => setEditCourierData({...editCourierData, phone: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none" placeholder="Τηλέφωνο" />
+                            <input type="email" value={editCourierData.email} onChange={(e) => setEditCourierData({...editCourierData, email: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none" placeholder="Email" />
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex items-center gap-1"><Phone size={12} /> {courier.phone}</span>
+                            <span className="flex items-center gap-1"><Mail size={12} /> {courier.email}</span>
+                          </>
+                        )}
                       </span>
                     </div>
-                    <div className="col-span-3 hidden md:block text-adaptive-light">{courier.phone}</div>
-                    <div className="col-span-3 hidden md:block text-adaptive text-sm truncate pr-2">{courier.email}</div>
-                    <div className="col-span-2 flex justify-end mt-2 md:mt-0">
-                      <button
-                        onClick={() => toggleDriverStatus(courier.id, courier.is_active !== false)}
-                        className={`w-full md:w-auto px-4 py-2 rounded-xl font-bold text-sm transition-colors border ${
-                          courier.is_active !== false 
-                            ? 'btn-glass text-[#9D4EDD] border-[#9D4EDD]/50 hover:shadow-[inset_0_0_15px_rgba(157,78,221,0.4)]' 
-                            : 'btn-glass text-[#38EF7D] border-[#38EF7D]/50 hover:shadow-[inset_0_0_15px_rgba(56,239,125,0.4)]'
-                        }`}
-                      >
-                        {courier.is_active !== false ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}
-                      </button>
+                    
+                    <div className="col-span-3 hidden md:block text-adaptive-light pr-2">
+                      {editingCourier === courier.id ? (
+                        <input type="text" value={editCourierData.phone} onChange={(e) => setEditCourierData({...editCourierData, phone: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none" />
+                      ) : (
+                        courier.phone
+                      )}
+                    </div>
+                    
+                    <div className="col-span-3 hidden md:block text-adaptive text-sm truncate pr-2">
+                      {editingCourier === courier.id ? (
+                        <input type="email" value={editCourierData.email} onChange={(e) => setEditCourierData({...editCourierData, email: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none" />
+                      ) : (
+                        courier.email
+                      )}
+                    </div>
+                    <div className="col-span-2 flex flex-col items-end gap-2 mt-2 md:mt-0">
+                      {editingCourier === courier.id ? (
+                        <div className="flex gap-2 w-full md:w-auto">
+                          <button onClick={() => saveCourierDetails(courier.id)} className="flex-1 md:flex-none btn-glass text-[#38EF7D] border border-[#38EF7D]/50 hover:shadow-[inset_0_0_10px_rgba(56,239,125,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><Check size={16}/></button>
+                          <button onClick={() => setEditingCourier(null)} className="flex-1 md:flex-none btn-glass text-[#9D4EDD] border border-[#9D4EDD]/50 hover:shadow-[inset_0_0_10px_rgba(157,78,221,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><X size={16}/></button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 w-full md:w-auto">
+                          <button onClick={() => { setEditingCourier(courier.id); setEditCourierData({ full_name: courier.full_name, phone: courier.phone, email: courier.email }); }} className="flex-1 md:flex-none btn-glass hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] text-[#C5A066] border border-[#C5A066]/30 px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex items-center justify-center gap-2">
+                            <Edit2 size={14} /> Επεξεργασία
+                          </button>
+                        </div>
+                      )}
+                      {!editingCourier && (
+                        <div className="flex gap-2 w-full md:w-auto mt-1">
+                          <button
+                            onClick={() => toggleDriverStatus(courier.id, courier.is_active !== false)}
+                            className={`flex-1 md:flex-none px-3 py-2 rounded-xl font-bold text-xs transition-colors border ${
+                              courier.is_active !== false 
+                                ? 'btn-glass text-[#9D4EDD] border-[#9D4EDD]/50 hover:shadow-[inset_0_0_15px_rgba(157,78,221,0.4)]' 
+                                : 'btn-glass text-[#38EF7D] border-[#38EF7D]/50 hover:shadow-[inset_0_0_15px_rgba(56,239,125,0.4)]'
+                            }`}
+                          >
+                            {courier.is_active !== false ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}
+                          </button>
+                          <button
+                            onClick={() => toggleBlockedStatus(courier.id, 'drivers', courier.is_blocked)}
+                            className={`flex-1 md:flex-none px-3 py-2 rounded-xl font-bold text-xs transition-colors border ${
+                              courier.is_blocked 
+                                ? 'btn-glass text-[#38EF7D] border-[#38EF7D]/50 hover:shadow-[inset_0_0_15px_rgba(56,239,125,0.4)]' 
+                                : 'btn-glass text-[#EF4444] border-[#EF4444]/50 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.4)]'
+                            }`}
+                          >
+                            {courier.is_blocked ? 'Ξεμπλοκάρισμα' : 'Μπλοκάρισμα'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

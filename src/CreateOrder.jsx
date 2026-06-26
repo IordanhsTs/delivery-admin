@@ -1,28 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send } from 'lucide-react';
+import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send, Bike } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
 export default function CreateOrder() {
   const [stores, setStores] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState('');
+  const [selectedDriverId, setSelectedDriverId] = useState('');
   const [address, setAddress] = useState('');
-  const [comments, setComments] = useState(''); // 1. Νέο state για τα σχόλια
+  const [comments, setComments] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Ανάκτηση των καταστημάτων για το dropdown
+  // Ανάκτηση δεδομένων για τα dropdowns
   useEffect(() => {
-    async function fetchStores() {
-      const { data, error } = await supabase
-        .from('stores')
-        .select('id, name')
-        .order('name', { ascending: true });
+    async function fetchData() {
+      const [storesRes, driversRes] = await Promise.all([
+        supabase.from('stores').select('id, name').order('name', { ascending: true }),
+        supabase.from('drivers').select('id, full_name').eq('is_active', true).order('full_name', { ascending: true })
+      ]);
       
-      if (data) setStores(data);
-      if (error) console.error("Σφάλμα φόρτωσης καταστημάτων:", error);
+      if (storesRes.data) setStores(storesRes.data);
+      if (storesRes.error) console.error("Σφάλμα φόρτωσης καταστημάτων:", storesRes.error);
+      
+      if (driversRes.data) setDrivers(driversRes.data);
+      if (driversRes.error) console.error("Σφάλμα φόρτωσης διανομέων:", driversRes.error);
     }
-    fetchStores();
+    fetchData();
   }, []);
 
   const handleCreateOrder = async (e) => {
@@ -35,18 +40,22 @@ export default function CreateOrder() {
 
     setLoading(true);
 
-    // Εισαγωγή της νέας παραγγελίας με status 'pending' και προσθήκη των σχολίων
-    const { error } = await supabase
-      .from('orders')
-      .insert([
-        {
-          store_id: selectedStoreId,
-          address: address.trim(),
-          comments: comments.trim() || null, // 2. Αποστολή σχολίων (ή null αν είναι άδειο)
-          status: 'pending', 
-          created_at: new Date().toISOString()
-        }
-      ]);
+    const isDirectAssignment = !!selectedDriverId;
+    const newOrder = {
+      store_id: selectedStoreId,
+      address: address.trim(),
+      comments: comments.trim() || null,
+      status: isDirectAssignment ? 'accepted' : 'pending',
+      created_at: new Date().toISOString()
+    };
+    
+    if (isDirectAssignment) {
+      newOrder.driver_id = selectedDriverId;
+      newOrder.accepted_at = new Date().toISOString();
+    }
+
+    // Εισαγωγή της νέας παραγγελίας
+    const { error } = await supabase.from('orders').insert([newOrder]);
 
     setLoading(false);
 
@@ -54,10 +63,15 @@ export default function CreateOrder() {
       toast.error("Υπήρξε σφάλμα κατά τη δημιουργία της παραγγελίας.");
       console.error(error);
     } else {
-      toast.success("Η παραγγελία δημιουργήθηκε και προωθήθηκε στους διανομείς!", { icon: <Rocket size={18} /> });
+      if (isDirectAssignment) {
+        toast.success("Η παραγγελία ανατέθηκε απευθείας στον διανομέα!", { icon: <Rocket size={18} /> });
+      } else {
+        toast.success("Η παραγγελία δημιουργήθηκε και προωθήθηκε σε όλους!", { icon: <Rocket size={18} /> });
+      }
       setAddress('');
       setSelectedStoreId('');
-      setComments(''); // 3. Καθαρισμός του πεδίου σχολίων
+      setSelectedDriverId('');
+      setComments('');
     }
   };
 
@@ -90,6 +104,23 @@ export default function CreateOrder() {
               {stores.map(store => (
                 <option key={store.id} value={store.id}>
                   {store.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Επιλογή Διανομέα (Απευθείας Ανάθεση) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[#C5A066] font-bold text-sm flex items-center gap-2"><Bike size={16} /> Απευθείας Ανάθεση (Προαιρετικό)</label>
+            <select
+              value={selectedDriverId}
+              onChange={(e) => setSelectedDriverId(e.target.value)}
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light font-medium transition-colors cursor-pointer"
+            >
+              <option value="">-- Χωρίς Απευθείας Ανάθεση (Προς όλους) --</option>
+              {drivers.map(driver => (
+                <option key={driver.id} value={driver.id}>
+                  {driver.full_name}
                 </option>
               ))}
             </select>
