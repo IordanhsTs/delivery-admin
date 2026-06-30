@@ -212,9 +212,74 @@ export default function App() {
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        {/* Brand */}
+        {/* ── MOBILE TOP BAR: όλα σε έναν οριζόντιο άξονα ── */}
         <div
-          className="px-5 py-5 flex items-center justify-between border-b"
+          className="md:hidden flex items-center gap-1 px-2 py-1.5 border-b"
+          style={{ borderColor: 'var(--border-default)' }}
+        >
+          {/* Logo (refresh) */}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-bold text-white text-base"
+            style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 2px 8px var(--accent-muted)' }}
+            title="Ανανέωση σελίδας"
+          >
+            V
+          </button>
+
+          {/* Tabs (scrollable) */}
+          <nav className="flex-1 flex items-center gap-1 overflow-x-auto">
+            {NAV_ITEMS.map(({ id, Icon, shortLabel }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className="flex flex-col items-center justify-center gap-0.5 py-1.5 px-2 rounded-lg transition-all duration-200 shrink-0 min-w-[58px]"
+                style={getNavStyle(id)}
+              >
+                <Icon />
+                <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="shrink-0 p-2 rounded-lg"
+            style={{ color: 'var(--text-muted)' }}
+            title={isDark ? 'Light Mode' : 'Dark Mode'}
+          >
+            <div className="relative w-5 h-5">
+              <div
+                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
+                style={{ opacity: isDark ? 1 : 0, transform: isDark ? 'rotate(0deg)' : 'rotate(-30deg) scale(0.8)' }}
+              >
+                <SunIcon />
+              </div>
+              <div
+                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
+                style={{ opacity: isDark ? 0 : 1, transform: isDark ? 'rotate(30deg) scale(0.8)' : 'rotate(0deg)' }}
+              >
+                <MoonIcon />
+              </div>
+            </div>
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="shrink-0 p-2 rounded-lg"
+            style={{ color: 'var(--danger)' }}
+            title="Αποσύνδεση"
+          >
+            <LogOutIcon />
+          </button>
+        </div>
+
+        {/* Brand (desktop only) */}
+        <div
+          className="hidden md:flex px-5 py-5 items-center justify-between border-b"
           style={{ borderColor: 'var(--border-default)' }}
         >
           <button
@@ -247,20 +312,10 @@ export default function App() {
               </p>
             </div>
           </button>
-
-          {/* Mobile logout */}
-          <button
-            onClick={handleLogout}
-            className="md:hidden p-2 rounded-lg transition-all duration-150"
-            style={{ color: 'var(--danger)' }}
-            title="Αποσύνδεση"
-          >
-            <LogOutIcon />
-          </button>
         </div>
 
         {/* Nav items */}
-        <nav className="flex flex-row md:flex-col p-2 md:p-3 gap-1 overflow-x-auto md:overflow-visible md:flex-1">
+        <nav className="hidden md:flex md:flex-col p-3 gap-1 md:flex-1">
           {NAV_ITEMS.map(({ id, Icon, shortLabel, fullLabel }) => (
             <button
               key={id}
@@ -376,33 +431,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile theme toggle (bottom bar) */}
-        <div
-          className="flex md:hidden justify-end px-2 py-1.5 border-t"
-          style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-sidebar)' }}
-        >
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg transition-all duration-150"
-            style={{ color: 'var(--text-muted)' }}
-            title={isDark ? 'Light Mode' : 'Dark Mode'}
-          >
-            <div className="relative w-5 h-5">
-              <div
-                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
-                style={{ opacity: isDark ? 1 : 0, transform: isDark ? 'rotate(0deg)' : 'rotate(-30deg) scale(0.8)' }}
-              >
-                <SunIcon />
-              </div>
-              <div
-                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
-                style={{ opacity: isDark ? 0 : 1, transform: isDark ? 'rotate(30deg) scale(0.8)' : 'rotate(0deg)' }}
-              >
-                <MoonIcon />
-              </div>
-            </div>
-          </button>
-        </div>
       </div>
 
       {/* ══════════════════════════════
