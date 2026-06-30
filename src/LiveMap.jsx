@@ -379,7 +379,12 @@ export default function LiveMap() {
       {/* ════════ ΧΑΡΤΗΣ ΠΛΗΡΟΥΣ ΟΘΟΝΗΣ ════════ */}
       <div
         className="relative w-full rounded-2xl overflow-hidden z-0 h-[72vh] md:h-[calc(100vh-4rem)]"
-        style={{ border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-md)' }}
+        style={{
+          border: `2px solid ${isDark ? 'rgba(197,160,102,0.65)' : 'rgba(197,160,102,0.5)'}`,
+          boxShadow: isDark
+            ? '0 0 0 1px rgba(197,160,102,0.25), 0 8px 30px rgba(0,0,0,0.6)'
+            : 'var(--shadow-md)',
+        }}
       >
         <MapContainer center={centerPosition} zoom={14} className="h-full w-full custom-filtered-map" style={{ background: theme === 'dark' ? '#0d0d0d' : '#f8f5f0' }}>
           <TileLayer
