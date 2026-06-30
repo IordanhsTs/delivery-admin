@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { renderToString } from 'react-dom/server';
-import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from './supabaseClient';
@@ -386,11 +386,13 @@ export default function LiveMap() {
             : 'var(--shadow-md)',
         }}
       >
-        <MapContainer center={centerPosition} zoom={14} className="h-full w-full custom-filtered-map" style={{ background: theme === 'dark' ? '#0d0d0d' : '#f8f5f0' }}>
+        <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: theme === 'dark' ? '#0d0d0d' : '#f8f5f0' }}>
           <TileLayer
             attribution='&copy; <a href="https://carto.com/">Carto</a>'
             url={currentTile}
           />
+          {/* Zoom controls κάτω-αριστερά ώστε να μην επικαλύπτονται από τα overlays */}
+          <ZoomControl position="bottomleft" />
 
           {drivers.map(driver => {
             const driverActiveOrders = orders.filter(o => o.status === 'accepted' && o.driver_id === driver.id);
@@ -461,14 +463,14 @@ export default function LiveMap() {
 
         {/* ════════ OVERLAYS ════════ */}
 
-        {/* ── ΠΑΝΩ ΑΡΙΣΤΕΡΑ: Στατιστικά + Φόρτος (οριζόντια, αφήνει χώρο στα +/-) ── */}
-        <div className="absolute top-3 left-[58px] z-[1100] flex flex-col gap-2 items-start max-w-[calc(100%-58px-0.75rem)]">
-          {/* Οριζόντια γραμμή: Φόρτος · Ολοκληρωμένες · Μ.Ο. παράδοσης */}
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* ════════ OVERLAYS (ενιαία responsive διάταξη — wrap στο κινητό) ════════ */}
+        <div className="absolute top-3 left-3 right-3 z-[1100] flex flex-col gap-2 pointer-events-none">
+          {/* Γραμμή κουμπιών — αναδιπλώνεται στο κινητό */}
+          <div className="flex flex-wrap items-start gap-2">
             {/* Κουμπί φόρτου εργασίας */}
             <button
               onClick={() => setShowWorkload(v => !v)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all pointer-events-auto"
               style={{
                 background: showWorkload ? 'linear-gradient(135deg,#C5A066,#a8843f)' : panelBg,
                 border: `1px solid ${panelBorder}`,
@@ -477,13 +479,14 @@ export default function LiveMap() {
             >
               <span className="flex items-center gap-1.5 text-[12px] font-bold">
                 <Flame size={15} className={showWorkload ? 'text-[#111]' : 'text-[#C5A066]'} />
-                Φόρτος Εργασίας
+                <span className="hidden sm:inline">Φόρτος Εργασίας</span>
+                <span className="sm:hidden">Φόρτος</span>
               </span>
               {showWorkload ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button>
 
             <div
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl backdrop-blur-xl shadow-lg"
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl backdrop-blur-xl shadow-lg pointer-events-auto"
               style={{ background: panelBg, border: `1px solid ${panelBorder}` }}
             >
               <Check size={14} className="text-[#C5A066]" />
@@ -493,83 +496,83 @@ export default function LiveMap() {
             </div>
 
             <div
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl backdrop-blur-xl shadow-lg"
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl backdrop-blur-xl shadow-lg pointer-events-auto"
               style={{ background: panelBg, border: `1px solid ${panelBorder}` }}
             >
               <Timer size={14} className="text-[#38EF7D]" />
               <span className="text-[11px] font-bold text-[#38EF7D] whitespace-nowrap">
-                Μ.Ο. σήμερα: {avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
+                Μ.Ο.: {avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
               </span>
+            </div>
+
+            {/* Κουμπιά Εκκρεμείς / Ενεργές — δεξιά σε desktop */}
+            <div className="flex gap-2 md:ml-auto">
+              <button
+                onClick={togglePending}
+                disabled={pendingOrders.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all pointer-events-auto"
+                style={{
+                  background: showPending ? 'linear-gradient(135deg,#C5A066,#a8843f)' : panelBg,
+                  border: `1px solid ${panelBorder}`,
+                  color: showPending ? '#111' : (isDark ? '#e2e8f0' : '#1e293b'),
+                  opacity: pendingOrders.length === 0 ? 0.5 : 1,
+                  cursor: pendingOrders.length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <Search size={14} className={showPending ? 'text-[#111]' : 'text-[#C5A066]'} />
+                <span className="text-[12px] font-bold">Εκκρεμείς</span>
+                <span className="text-[11px] font-bold px-1.5 rounded-full" style={{ background: showPending ? 'rgba(0,0,0,0.15)' : 'rgba(197,160,102,0.15)', color: showPending ? '#111' : '#C5A066' }}>
+                  {pendingOrders.length}
+                </span>
+              </button>
+
+              <button
+                onClick={toggleAccepted}
+                disabled={acceptedOrders.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all pointer-events-auto"
+                style={{
+                  background: showAccepted ? 'linear-gradient(135deg,#38EF7D,#16a34a)' : panelBg,
+                  border: `1px solid ${showAccepted ? 'rgba(56,239,125,0.6)' : panelBorder}`,
+                  color: showAccepted ? '#062b15' : (isDark ? '#e2e8f0' : '#1e293b'),
+                  opacity: acceptedOrders.length === 0 ? 0.5 : 1,
+                  cursor: acceptedOrders.length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <Bike size={14} className={showAccepted ? 'text-[#062b15]' : 'text-[#38EF7D]'} />
+                <span className="text-[12px] font-bold">Ενεργές</span>
+                <span className="text-[11px] font-bold px-1.5 rounded-full" style={{ background: showAccepted ? 'rgba(0,0,0,0.15)' : 'rgba(56,239,125,0.15)', color: showAccepted ? '#062b15' : '#38EF7D' }}>
+                  {acceptedOrders.length}
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* Πάνελ heatmap */}
-          <AnimatePresence>
-            {showWorkload && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                exit={{ opacity: 0, y: -8, height: 0 }}
-                transition={{ duration: 0.22 }}
-                className="rounded-xl backdrop-blur-xl shadow-2xl overflow-hidden"
-                style={{ background: panelBg, border: `1px solid ${panelBorder}` }}
-              >
-                <WorkloadChart
-                  matrix={workloadMatrix}
-                  loading={loadingWorkload}
-                  isDark={isDark}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          {/* Πάνελ — Φόρτος (αριστερά σε desktop) · Παραγγελίες (δεξιά) */}
+          <div className="flex flex-col md:flex-row md:items-start gap-2">
+            {/* Φόρτος εργασίας */}
+            <AnimatePresence>
+              {showWorkload && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
+                  className="rounded-xl backdrop-blur-xl shadow-2xl overflow-hidden pointer-events-auto self-start"
+                  style={{ background: panelBg, border: `1px solid ${panelBorder}` }}
+                >
+                  <WorkloadChart
+                    matrix={workloadMatrix}
+                    loading={loadingWorkload}
+                    isDark={isDark}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-        {/* ── ΠΑΝΩ ΔΕΞΙΑ: Εκκρεμείς + Ενεργές ── */}
-        <div className="absolute top-3 right-3 z-[1100] flex flex-col gap-2 items-end w-[300px] max-w-[calc(100%-1.5rem)]">
-          {/* Toggle buttons */}
-          <div className="flex gap-2 w-full">
-            <button
-              onClick={togglePending}
-              disabled={pendingOrders.length === 0}
-              className="flex-1 flex items-center justify-between gap-1.5 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all"
-              style={{
-                background: showPending ? 'linear-gradient(135deg,#C5A066,#a8843f)' : panelBg,
-                border: `1px solid ${panelBorder}`,
-                color: showPending ? '#111' : (isDark ? '#e2e8f0' : '#1e293b'),
-                opacity: pendingOrders.length === 0 ? 0.5 : 1,
-                cursor: pendingOrders.length === 0 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <span className="flex items-center gap-1.5 text-[12px] font-bold">
-                <Search size={14} className={showPending ? 'text-[#111]' : 'text-[#C5A066]'} /> Εκκρεμείς
-              </span>
-              <span className="text-[11px] font-bold px-1.5 rounded-full" style={{ background: showPending ? 'rgba(0,0,0,0.15)' : 'rgba(197,160,102,0.15)', color: showPending ? '#111' : '#C5A066' }}>
-                {pendingOrders.length}
-              </span>
-            </button>
+            {/* Στήλη Παραγγελιών (Εκκρεμείς/Ενεργές) */}
+            <div className="flex flex-col gap-2 w-full md:w-[340px] md:ml-auto">
 
-            <button
-              onClick={toggleAccepted}
-              disabled={acceptedOrders.length === 0}
-              className="flex-1 flex items-center justify-between gap-1.5 px-3 py-2 rounded-xl backdrop-blur-xl shadow-lg transition-all"
-              style={{
-                background: showAccepted ? 'linear-gradient(135deg,#38EF7D,#16a34a)' : panelBg,
-                border: `1px solid ${showAccepted ? 'rgba(56,239,125,0.6)' : panelBorder}`,
-                color: showAccepted ? '#062b15' : (isDark ? '#e2e8f0' : '#1e293b'),
-                opacity: acceptedOrders.length === 0 ? 0.5 : 1,
-                cursor: acceptedOrders.length === 0 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <span className="flex items-center gap-1.5 text-[12px] font-bold">
-                <Bike size={14} className={showAccepted ? 'text-[#062b15]' : 'text-[#38EF7D]'} /> Ενεργές
-              </span>
-              <span className="text-[11px] font-bold px-1.5 rounded-full" style={{ background: showAccepted ? 'rgba(0,0,0,0.15)' : 'rgba(56,239,125,0.15)', color: showAccepted ? '#062b15' : '#38EF7D' }}>
-                {acceptedOrders.length}
-              </span>
-            </button>
-          </div>
-
-          {/* Πάνελ Εκκρεμών */}
+              {/* Πάνελ Εκκρεμών */}
           <AnimatePresence>
             {showPending && (
               <motion.div
@@ -577,7 +580,7 @@ export default function LiveMap() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
-                className="w-full rounded-2xl backdrop-blur-xl shadow-2xl p-3 overlay-scroll"
+                className="w-full rounded-2xl backdrop-blur-xl shadow-2xl p-3 overlay-scroll pointer-events-auto"
                 style={{ background: panelBg, border: `1px solid ${panelBorder}`, borderLeft: '4px solid #C5A066', maxHeight: '42vh', overflowY: 'auto' }}
               >
                 {pendingOrders.length === 0 ? (
@@ -681,7 +684,7 @@ export default function LiveMap() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
-                className="w-full rounded-2xl backdrop-blur-xl shadow-2xl p-3 overlay-scroll"
+                className="w-full rounded-2xl backdrop-blur-xl shadow-2xl p-3 overlay-scroll pointer-events-auto"
                 style={{ background: panelBg, border: `1px solid ${panelBorder}`, borderLeft: '4px solid #38EF7D', maxHeight: '42vh', overflowY: 'auto' }}
               >
                 {acceptedOrders.length === 0 ? (
@@ -741,6 +744,8 @@ export default function LiveMap() {
               </motion.div>
             )}
           </AnimatePresence>
+            </div>
+          </div>
         </div>
 
       </div>
