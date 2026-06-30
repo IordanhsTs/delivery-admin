@@ -200,7 +200,7 @@ export default function App() {
       className="flex flex-col md:flex-row h-screen overflow-hidden"
       style={{ backgroundColor: 'var(--bg-primary)', fontFamily: 'Inter, sans-serif' }}
     >
-      <Toaster position="top-right" theme={isDark ? 'dark' : 'light'} richColors />
+      <Toaster position="bottom-center" theme={isDark ? 'dark' : 'light'} richColors />
       {/* ══════════════════════════════
           SIDEBAR
       ══════════════════════════════ */}
@@ -217,7 +217,12 @@ export default function App() {
           className="px-5 py-5 flex items-center justify-between border-b"
           style={{ borderColor: 'var(--border-default)' }}
         >
-          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-3 cursor-pointer transition-opacity hover:opacity-80 active:opacity-60 text-left"
+            title="Ανανέωση σελίδας"
+          >
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-base"
               style={{
@@ -241,7 +246,7 @@ export default function App() {
                 Admin Control
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Mobile logout */}
           <button
