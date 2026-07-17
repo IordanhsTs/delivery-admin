@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, Search, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, Search, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -31,6 +31,21 @@ const alertSound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_s
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DOW_LABELS = { 1: 'Δευ', 2: 'Τρι', 3: 'Τετ', 4: 'Πεμ', 5: 'Παρ', 6: 'Σαβ', 0: 'Κυρ' };
 const DOW_FULL = { 1: 'Δευτέρα', 2: 'Τρίτη', 3: 'Τετάρτη', 4: 'Πέμπτη', 5: 'Παρασκευή', 6: 'Σάββατο', 0: 'Κυριακή' };
+
+// ── Κατάσταση σήματος διανομέα (ανοχή σε χαμένο σήμα σε ασανσέρ/πολυκατοικίες) ──
+// < FRESH: online · FRESH–OFFLINE: μένει στον χάρτη ως «χωρίς σήμα» · > OFFLINE: φεύγει.
+const SIGNAL_FRESH_MIN = 2;
+const SIGNAL_OFFLINE_MIN = 20;
+
+// ── Μπαταρία κινητού διανομέα: εικονίδιο + χρώμα ανά στάθμη ──────────────────
+// Χρήσιμο για εταιρίες που δίνουν κινητά στους διανομείς για τη βάρδια.
+const batteryVisual = (level) => {
+  if (level === null || level === undefined) return null;
+  if (level <= 15) return { Icon: BatteryWarning, color: '#ff4b4b' };
+  if (level <= 40) return { Icon: BatteryLow, color: '#F59E0B' };
+  if (level <= 75) return { Icon: BatteryMedium, color: '#C5A066' };
+  return { Icon: BatteryFull, color: '#38EF7D' };
+};
 
 export default function LiveMap() {
   const { theme } = useTheme();
@@ -65,7 +80,7 @@ export default function LiveMap() {
   const fetchDrivers = async () => {
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, full_name, latitude, longitude')
+      .select('id, full_name, latitude, longitude, last_seen, battery_level')
       .eq('is_active', true)
       .not('latitude', 'is', null);
     if (data) setDrivers(data);
@@ -207,7 +222,7 @@ export default function LiveMap() {
             if (exists) {
               return prevDrivers.map(d =>
                 d.id === updatedDriver.id
-                  ? { ...d, latitude: updatedDriver.latitude, longitude: updatedDriver.longitude, full_name: updatedDriver.full_name }
+                  ? { ...d, latitude: updatedDriver.latitude, longitude: updatedDriver.longitude, full_name: updatedDriver.full_name, last_seen: updatedDriver.last_seen, battery_level: updatedDriver.battery_level }
                   : d
               );
             } else {
@@ -215,7 +230,9 @@ export default function LiveMap() {
                 id: updatedDriver.id,
                 full_name: updatedDriver.full_name,
                 latitude: updatedDriver.latitude,
-                longitude: updatedDriver.longitude
+                longitude: updatedDriver.longitude,
+                last_seen: updatedDriver.last_seen,
+                battery_level: updatedDriver.battery_level
               }];
             }
           } else {
@@ -397,6 +414,17 @@ export default function LiveMap() {
           {drivers.map(driver => {
             const driverActiveOrders = orders.filter(o => o.status === 'accepted' && o.driver_id === driver.id);
             const isBusy = driverActiveOrders.length > 0;
+
+            // ── Φρεσκάδα σήματος: κρύβουμε μόνο όσους λείπουν πάνω από SIGNAL_OFFLINE_MIN ──
+            const ageMin = driver.last_seen
+              ? (currentTime.getTime() - new Date(driver.last_seen).getTime()) / 60000
+              : Infinity;
+            if (ageMin > SIGNAL_OFFLINE_MIN) return null; // πραγματικά εκτός → φεύγει από τον χάρτη
+            const noSignal = ageMin > SIGNAL_FRESH_MIN;   // χαμένο σήμα (ασανσέρ κ.λπ.) → μένει, γκρι
+            const markerColor = noSignal ? '#8892A0' : (isBusy ? '#38EF7D' : '#C5A066');
+            const markerGlow = noSignal ? 'rgba(136,146,160,0.5)' : (isBusy ? 'rgba(56,239,125,0.6)' : 'rgba(197,160,102,0.6)');
+            const battery = batteryVisual(driver.battery_level);
+
             let idleStatusHtml;
 
             if (isBusy) {
@@ -433,12 +461,13 @@ export default function LiveMap() {
               html: renderToString(
                 <div style={{
                   width: '38px', height: '38px', borderRadius: '50%', background: '#111',
-                  border: `2px solid ${isBusy ? '#38EF7D' : '#C5A066'}`,
+                  border: `2px solid ${markerColor}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: `0 0 15px ${isBusy ? 'rgba(56,239,125,0.6)' : 'rgba(197,160,102,0.6)'}`,
+                  boxShadow: `0 0 15px ${markerGlow}`,
+                  opacity: noSignal ? 0.75 : 1,
                   transition: 'all 0.3s ease'
                 }}>
-                  <Bike size={18} color={isBusy ? '#38EF7D' : '#C5A066'} />
+                  <Bike size={18} color={markerColor} />
                 </div>
               ),
               iconSize: [38, 38],
@@ -450,9 +479,19 @@ export default function LiveMap() {
                 <Tooltip permanent direction="top" offset={[0, -22]} opacity={1} className={`premium-tooltip ${isBusy ? 'premium-tooltip-busy' : ''}`}>
                   <div className="leading-relaxed min-w-[120px]">
                     <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-gray-700/50">
-                      <div className={`w-2 h-2 rounded-full ${isBusy ? 'bg-[#38EF7D] animate-pulse' : 'bg-[#C5A066]'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${!noSignal && isBusy ? 'animate-pulse' : ''}`} style={{ background: markerColor }}></div>
                       <b className="text-[13px] text-white tracking-wide">{driver.full_name}</b>
                     </div>
+                    {battery && (
+                      <div className="flex items-center gap-1 text-[11px] font-bold mb-0.5" style={{ color: battery.color }}>
+                        <battery.Icon size={12} /> Μπαταρία: {driver.battery_level}%
+                      </div>
+                    )}
+                    {noSignal && (
+                      <div className="font-bold text-[11px] mb-0.5 flex items-center gap-1" style={{ color: '#B0B7C3' }}>
+                        <AlertTriangle size={11} /> Χωρίς σήμα: {Math.floor(ageMin)} λ.
+                      </div>
+                    )}
                     {idleStatusHtml}
                   </div>
                 </Tooltip>
