@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike } from 'lucide-react';
+import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -147,6 +147,25 @@ export default function StoreManagement() {
       console.error(error);
     } else {
       toast.success(`Ο οδηγός ${!currentStatus ? 'ενεργοποιήθηκε' : 'απενεργοποιήθηκε'}.`);
+      fetchCouriers();
+    }
+  };
+
+  // Force-logout: κλείνει τη σύνδεση του διανομέα σε όποια συσκευή κι αν είναι.
+  // is_active=false → το κινητό (αν online) αυτο-αποσυνδέεται μέσω του listener·
+  // fcm_token=null → σταματούν οι ειδοποιήσεις· active_device_id=null → καθαρή
+  // κατάσταση για επόμενο login. Αν είναι offline, αποσυνδέεται μόλις ξανανοίξει.
+  const forceLogoutDriver = async (driverId, driverName) => {
+    if (!window.confirm(`Αποσύνδεση του διανομέα «${driverName || ''}» από τη συσκευή του;`)) return;
+    const { error } = await supabase
+      .from('drivers')
+      .update({ is_active: false, fcm_token: null, active_device_id: null })
+      .eq('id', driverId);
+    if (error) {
+      toast.error("Σφάλμα κατά την αποσύνδεση.");
+      console.error(error);
+    } else {
+      toast.success("Ο διανομέας αποσυνδέθηκε από τη συσκευή του.");
       fetchCouriers();
     }
   };
@@ -453,6 +472,13 @@ export default function StoreManagement() {
                             }`}
                           >
                             {courier.is_blocked ? 'Ξεμπλοκάρισμα' : 'Μπλοκάρισμα'}
+                          </button>
+                          <button
+                            onClick={() => forceLogoutDriver(courier.id, courier.full_name)}
+                            title="Αποσύνδεση από τη συσκευή του"
+                            className="flex-1 md:flex-none px-3 py-2 rounded-xl font-bold text-xs transition-colors border btn-glass text-[#94A3B8] border-[#94A3B8]/50 hover:shadow-[inset_0_0_15px_rgba(148,163,184,0.4)] flex items-center justify-center gap-1.5"
+                          >
+                            <LogOut size={13} /> Αποσύνδεση
                           </button>
                         </div>
                       )}
