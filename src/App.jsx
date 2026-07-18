@@ -458,7 +458,8 @@ export default function App() {
           }}
         />
 
-        <div className="relative z-[1] p-4 md:p-8 min-h-full">
+        {/* Ο χάρτης θέλει όλο τον χώρο (full-bleed)· οι υπόλοιπες καρτέλες κρατούν το padding */}
+        <div className={activeTab === 'map' ? 'relative z-[1] h-full' : 'relative z-[1] p-4 md:p-8 min-h-full'}>
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
