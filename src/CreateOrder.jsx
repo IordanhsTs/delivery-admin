@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
-import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send, Bike } from 'lucide-react';
+import { supabase, isReadOnly } from './supabaseClient';
+import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send, Bike, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -12,6 +12,8 @@ export default function CreateOrder() {
   const [address, setAddress] = useState('');
   const [comments, setComments] = useState('');
   const [loading, setLoading] = useState(false);
+  // READ-ONLY-ON-FAILOVER: σε standby δεν επιτρέπεται δημιουργία παραγγελίας.
+  const readOnly = isReadOnly();
 
   // Ανάκτηση δεδομένων για τα dropdowns
   useEffect(() => {
@@ -32,7 +34,12 @@ export default function CreateOrder() {
 
   const handleCreateOrder = async (e) => {
     e.preventDefault();
-    
+
+    if (readOnly) {
+      toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση.");
+      return;
+    }
+
     if (!selectedStoreId || !address.trim()) {
       toast.warning("Παρακαλώ επιλέξτε κατάστημα και συμπληρώστε τη διεύθυνση.");
       return;
@@ -153,10 +160,15 @@ export default function CreateOrder() {
           {/* Κουμπί Υποβολής */}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full btn-glass border border-[#C5A066]/50 text-[#C5A066] hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] font-bold py-3 px-5 rounded-xl cursor-pointer transition-all disabled:opacity-50 mt-2 text-base flex items-center justify-center gap-2"
+            disabled={loading || readOnly}
+            title={readOnly ? 'Προσωρινά μη διαθέσιμο — εφεδρική λειτουργία (μόνο ανάγνωση)' : undefined}
+            className="w-full btn-glass border border-[#C5A066]/50 text-[#C5A066] hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] font-bold py-3 px-5 rounded-xl cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2 text-base flex items-center justify-center gap-2"
           >
-            {loading ? 'Αποστολή στο σύστημα...' : <><Send size={18} /> Προώθηση Παραγγελίας</>}
+            {readOnly
+              ? <><Lock size={18} /> Προσωρινά μη διαθέσιμο</>
+              : loading
+              ? 'Αποστολή στο σύστημα...'
+              : <><Send size={18} /> Προώθηση Παραγγελίας</>}
           </button>
 
         </form>

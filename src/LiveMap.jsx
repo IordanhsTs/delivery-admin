@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { supabase, getActiveBackend } from './supabaseClient';
+import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,6 +59,18 @@ function MapResizeHandler() {
   return null;
 }
 
+// MULTI-TENANT: recenter όταν φτάσει το map_center της εταιρίας. Το `center` αλλάζει
+// μόνο μία φορά (default → fetched) κατά τη φόρτωση, οπότε δεν παλεύει με τον χρήστη.
+function MapCenterHandler({ center }) {
+  const map = useMap();
+  const key = center ? `${center[0]},${center[1]}` : '';
+  useEffect(() => {
+    if (center) map.setView(center);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
+  return null;
+}
+
 // ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
 function RailSection({ Icon, title, count, tint, children }) {
   return (
@@ -102,6 +114,21 @@ export default function LiveMap() {
   const [avgDeliveryToday, setAvgDeliveryToday] = useState(null);
   const [ordersToday, setOrdersToday] = useState(0);
   const [loadingWorkload, setLoadingWorkload] = useState(false);
+  // MULTI-TENANT: κέντρο χάρτη ανά εταιρία από τον companies (fallback Φλώρινα· σε
+  // production χωρίς companies/hook το query αποτυγχάνει σιωπηλά → μένει το default).
+  const [centerPosition, setCenterPosition] = useState([40.7819, 21.4098]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.schema('public').from('companies')
+          .select('map_center').eq('schema_name', getTenantSchema()).maybeSingle();
+        if (data?.map_center) {
+          const [lat, lng] = data.map_center.split(',').map(Number);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) setCenterPosition([lat, lng]);
+        }
+      } catch (_) {}
+    })();
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -228,7 +255,7 @@ export default function LiveMap() {
 
     const driversChannel = supabase
       .channel('public:drivers_map_tracking')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
         if (payload.eventType === 'DELETE') {
           setDrivers(prev => prev.filter(d => d.id !== payload.old.id));
           return;
@@ -274,7 +301,7 @@ export default function LiveMap() {
 
     const ordersChannel = supabase
       .channel('public:orders_map_flow')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'orders' }, (payload) => {
         fetchActiveOrders();
         fetchLastCompletedTimes();
         fetchTodayDeliveryStats();
@@ -296,6 +323,7 @@ export default function LiveMap() {
   }, []);
 
   const assignOrderToDriver = async (orderId, driverId) => {
+    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const { error } = await supabase
       .from('orders')
       .update({ status: 'accepted', driver_id: driverId, accepted_at: new Date().toISOString() })
@@ -310,6 +338,7 @@ export default function LiveMap() {
   };
 
   const cancelOrder = async (orderId) => {
+    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const isConfirmed = window.confirm("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;");
     if (!isConfirmed) return;
 
@@ -331,6 +360,7 @@ export default function LiveMap() {
   };
 
   const completeOrder = async (orderId) => {
+    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const isConfirmed = window.confirm("Είστε σίγουροι ότι θέλετε να ολοκληρώσετε τη συγκεκριμένη παραγγελία;");
     if (!isConfirmed) return;
 
@@ -364,7 +394,6 @@ export default function LiveMap() {
 
   const pendingOrders = orders.filter(o => o.status === 'pending');
   const acceptedOrders = orders.filter(o => o.status === 'accepted');
-  const centerPosition = [40.7819, 21.4098];
 
   const signalAgeMin = (driver) =>
     driver.last_seen ? (currentTime.getTime() - new Date(driver.last_seen).getTime()) / 60000 : Infinity;
@@ -505,6 +534,7 @@ export default function LiveMap() {
         <div className="relative h-[48vh] md:h-auto md:flex-1 min-w-0 z-0">
           <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: theme === 'dark' ? '#0d0d0d' : '#f8f5f0' }}>
             <MapResizeHandler />
+            <MapCenterHandler center={centerPosition} />
             <TileLayer
               attribution='&copy; <a href="https://carto.com/">Carto</a>'
               url={currentTile}

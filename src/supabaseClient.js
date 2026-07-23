@@ -88,6 +88,20 @@ export function getActiveBackend() {
   return active;
 }
 
+// MULTI-TENANT: το schema στο οποίο ζουν τα δεδομένα του χρήστη. Τα realtime κανάλια
+// ΠΡΕΠΕΙ να το χρησιμοποιούν (όχι καρφωτό 'public'), αλλιώς σε co_* tenant τα live
+// updates σπάνε σιωπηλά. Fallback 'public' → backward-compatible με το σημερινό setup.
+export function getTenantSchema() {
+  return tenantSchema || 'public';
+}
+
+// READ-ONLY-ON-FAILOVER: όταν τρέχουμε στο εφεδρικό (standby), οι εγγραφές είναι
+// κλειστές — το standby δέχεται ΜΟΝΟ αναγνώσεις κατά τη βλάβη ώστε να μην αποκλίνουν
+// τα δεδομένα. Η μετάβαση κάνει reload, οπότε η τιμή είναι σταθερή ανά φόρτωση.
+export function isReadOnly() {
+  return active?.name === 'standby';
+}
+
 function switchTo(index, reason) {
   if (index === activeIndex || !BACKENDS[index]) return;
   console.log(`🔄 [Failover] Μετάβαση στο backend "${BACKENDS[index].name}" (${reason})`);

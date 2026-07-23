@@ -8,6 +8,7 @@ import Statistics from './Statistics';
 import CreateOrder from './CreateOrder';
 import Messages from './Messages';
 import Login from './Login';
+import ReadOnlyBanner from './ReadOnlyBanner';
 import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -114,12 +115,40 @@ export default function App() {
   const isDark = theme === 'dark';
 
   useEffect(() => {
+    // Διαβάζει τα claims από το JWT (ίδιο μοτίβο με το applyTenantFromSession).
+    const readClaims = (session) => {
+      try {
+        const b64 = session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(b64));
+      } catch (_) {
+        return {};
+      }
+    };
+
     const verifyAdminSession = async (session) => {
       if (!session) {
         setIsAuthenticated(false);
         setSessionLoading(false);
         return;
       }
+
+      const claims = readClaims(session);
+
+      // ΝΕΟ μονοπάτι (multi-tenant, με auth hook): admin ΜΟΝΟ αν το `user_role` claim
+      // το λέει ρητά. Θετικός έλεγχος (allowlist) — όχι το παλιό fail-open «ό,τι δεν
+      // είναι driver/store = admin». Ο hook εισάγει το claim από τον πίνακα memberships.
+      if (typeof claims.user_role === 'string') {
+        const isAdmin = claims.user_role === 'admin';
+        if (!isAdmin) await supabase.auth.signOut();
+        setIsAuthenticated(isAdmin);
+        setSessionLoading(false);
+        return;
+      }
+
+      // ΜΕΤΑΒΑΤΙΚΟ fallback: production ΠΡΙΝ το cutover δεν έχει ακόμα auth hook, άρα
+      // κανένα `user_role` claim. Κρατάμε προσωρινά την προηγούμενη συμπεριφορά ώστε να
+      // μη σπάσει ο ήδη ζωντανός admin. Μόλις ενεργοποιηθεί ο hook (βήμα A5), το claim
+      // υπάρχει πάντα και εκτελείται αποκλειστικά το ασφαλές θετικό μονοπάτι παραπάνω.
       const { data: isDriver } = await supabase.from('drivers').select('id').eq('email', session.user.email).maybeSingle();
       const { data: isStore }  = await supabase.from('stores').select('id').eq('email', session.user.email).maybeSingle();
 
@@ -440,6 +469,7 @@ export default function App() {
         className="flex-1 overflow-y-auto relative"
         style={{ backgroundColor: 'var(--bg-primary)' }}
       >
+        <ReadOnlyBanner />
         {/* Ambient glow blobs */}
         <div
           className="fixed top-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full pointer-events-none opacity-30"
