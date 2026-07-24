@@ -563,9 +563,12 @@ export default function LiveMap() {
                       Σε διανομή ({driverActiveOrders.length}):
                     </span>
                     {driverActiveOrders.map(order => (
-                      <div key={order.id} className="text-[11px] text-adaptive-light flex items-center gap-1 mb-0.5 whitespace-nowrap">
+                      // Σταθερά ανοιχτόχρωμα (όχι text-adaptive/-light): το premium-tooltip
+                      // έχει πάντα μαύρο φόντο, ανεξαρτήτως theme — σε light mode το
+                      // "έξυπνο" σκούρο κείμενο του text-adaptive γινόταν σχεδόν αόρατο.
+                      <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
                         <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
-                        <span className="text-adaptive mx-0.5">➔</span>
+                        <span className="text-slate-400 mx-0.5">➔</span>
                         <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
                       </div>
                     ))}
