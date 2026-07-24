@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
+import { confirmDialog } from './ConfirmDialog';
 import { motion } from 'framer-motion';
 
 export default function StoreManagement() {
@@ -156,7 +157,8 @@ export default function StoreManagement() {
   // fcm_token=null → σταματούν οι ειδοποιήσεις· active_device_id=null → καθαρή
   // κατάσταση για επόμενο login. Αν είναι offline, αποσυνδέεται μόλις ξανανοίξει.
   const forceLogoutDriver = async (driverId, driverName) => {
-    if (!window.confirm(`Αποσύνδεση του διανομέα «${driverName || ''}» από τη συσκευή του;`)) return;
+    const confirmed = await confirmDialog(`Αποσύνδεση του διανομέα «${driverName || ''}» από τη συσκευή του;`, { danger: true, confirmLabel: 'Αποσύνδεση' });
+    if (!confirmed) return;
     const { error } = await supabase
       .from('drivers')
       .update({ is_active: false, fcm_token: null, active_device_id: null })

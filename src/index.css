@@ -71,6 +71,26 @@
   --transition-fast:   150ms cubic-bezier(0.4,0,0.2,1);
   --transition-normal: 250ms cubic-bezier(0.4,0,0.2,1);
   --transition-slow:   400ms cubic-bezier(0.4,0,0.2,1);
+
+  /* ── Χάρτης (LiveMap): μαρκαδόροι, premium-tooltip, heatmap φόρτου ──
+     Ήταν καρφωμένα hex σε τρία σημεία (LiveMap markers/premium-tooltips/
+     WorkloadChart). Εξάγονται εδώ αυτούσια (ίδιες τιμές, καμία οπτική
+     αλλαγή) — σκόπιμα σταθερά ανά theme, μια δική τους "neon" παλέτα
+     ανεξάρτητη από το γενικό light/dark του υπόλοιπου UI. */
+  --map-gold:            #C5A066;
+  --map-gold-deep:       #a8843f;
+  --map-gold-light:      #D9B877;
+  --map-green:           #38EF7D;
+  --map-green-deep:      #16a34a;
+  --map-critical:        #ff4b4b;
+  --map-warning:         #F59E0B;
+  --map-offline:         #8892A0;
+  --map-offline-text:    #B0B7C3;
+  --map-glow-gold:       rgba(197,160,102,0.6);
+  --map-glow-green:      rgba(56,239,125,0.6);
+  --map-glow-green-soft: rgba(56,239,125,0.5);
+  --map-tint-green:      rgba(56,239,125,0.15);
+  --map-glow-offline:    rgba(136,146,160,0.5);
 }
 
 /* === DARK THEME === */

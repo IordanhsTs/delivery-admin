@@ -7,6 +7,7 @@ import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supab
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
 import { toast } from 'sonner';
+import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Tile layer URLs
@@ -41,10 +42,10 @@ const SIGNAL_OFFLINE_MIN = 20;
 // Χρήσιμο για εταιρίες που δίνουν κινητά στους διανομείς για τη βάρδια.
 const batteryVisual = (level) => {
   if (level === null || level === undefined) return null;
-  if (level <= 15) return { Icon: BatteryWarning, color: '#ff4b4b' };
-  if (level <= 40) return { Icon: BatteryLow, color: '#F59E0B' };
-  if (level <= 75) return { Icon: BatteryMedium, color: '#C5A066' };
-  return { Icon: BatteryFull, color: '#38EF7D' };
+  if (level <= 15) return { Icon: BatteryWarning, color: 'var(--map-critical)' };
+  if (level <= 40) return { Icon: BatteryLow, color: 'var(--map-warning)' };
+  if (level <= 75) return { Icon: BatteryMedium, color: 'var(--map-gold)' };
+  return { Icon: BatteryFull, color: 'var(--map-green)' };
 };
 
 // Το Leaflet δεν αντιλαμβάνεται μόνο του αλλαγές μεγέθους του container
@@ -339,7 +340,7 @@ export default function LiveMap() {
 
   const cancelOrder = async (orderId) => {
     if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
-    const isConfirmed = window.confirm("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;");
+    const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;", { danger: true, confirmLabel: 'Ακύρωση παραγγελίας' });
     if (!isConfirmed) return;
 
     // Optimistic Update
@@ -361,7 +362,7 @@ export default function LiveMap() {
 
   const completeOrder = async (orderId) => {
     if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
-    const isConfirmed = window.confirm("Είστε σίγουροι ότι θέλετε να ολοκληρώσετε τη συγκεκριμένη παραγγελία;");
+    const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ολοκληρώσετε τη συγκεκριμένη παραγγελία;", { confirmLabel: 'Ολοκλήρωση' });
     if (!isConfirmed) return;
 
     // Optimistic Update
@@ -426,15 +427,15 @@ export default function LiveMap() {
           }
           .premium-tooltip {
             background: #111111 !important;
-            border: 1px solid #C5A066 !important;
+            border: 1px solid var(--map-gold) !important;
             border-radius: 8px !important;
             box-shadow: 0 4px 20px rgba(0,0,0,0.8) !important;
             padding: 8px 12px !important;
             backdrop-filter: blur(10px) !important;
           }
-          .premium-tooltip::before { border-top-color: #C5A066 !important; }
-          .premium-tooltip-busy { border-color: #38EF7D !important; }
-          .premium-tooltip-busy::before { border-top-color: #38EF7D !important; }
+          .premium-tooltip::before { border-top-color: var(--map-gold) !important; }
+          .premium-tooltip-busy { border-color: var(--map-green) !important; }
+          .premium-tooltip-busy::before { border-top-color: var(--map-green) !important; }
           .custom-div-icon { background: transparent; border: none; }
         `}
       </style>
@@ -532,7 +533,7 @@ export default function LiveMap() {
 
         {/* ── Χάρτης (full-bleed) ── */}
         <div className="relative h-[48vh] md:h-auto md:flex-1 min-w-0 z-0">
-          <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: theme === 'dark' ? '#0d0d0d' : '#f8f5f0' }}>
+          <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: 'var(--bg-primary)' }}>
             <MapResizeHandler />
             <MapCenterHandler center={centerPosition} />
             <TileLayer
@@ -549,8 +550,8 @@ export default function LiveMap() {
               const ageMin = signalAgeMin(driver);
               if (ageMin > SIGNAL_OFFLINE_MIN) return null; // πραγματικά εκτός → φεύγει από τον χάρτη
               const noSignal = ageMin > SIGNAL_FRESH_MIN;   // χαμένο σήμα (ασανσέρ κ.λπ.) → μένει, γκρι
-              const markerColor = noSignal ? '#8892A0' : (isBusy ? '#38EF7D' : '#C5A066');
-              const markerGlow = noSignal ? 'rgba(136,146,160,0.5)' : (isBusy ? 'rgba(56,239,125,0.6)' : 'rgba(197,160,102,0.6)');
+              const markerColor = noSignal ? 'var(--map-offline)' : (isBusy ? 'var(--map-green)' : 'var(--map-gold)');
+              const markerGlow = noSignal ? 'var(--map-glow-offline)' : (isBusy ? 'var(--map-glow-green)' : 'var(--map-glow-gold)');
               const battery = batteryVisual(driver.battery_level);
 
               let idleStatusHtml;
@@ -558,7 +559,7 @@ export default function LiveMap() {
               if (isBusy) {
                 idleStatusHtml = (
                   <div className="mt-1">
-                    <span className="font-bold text-[#38EF7D] block text-[10px] uppercase tracking-wider mb-1">
+                    <span className="font-bold text-[var(--map-green)] block text-[10px] uppercase tracking-wider mb-1">
                       Σε διανομή ({driverActiveOrders.length}):
                     </span>
                     {driverActiveOrders.map(order => (
@@ -575,7 +576,7 @@ export default function LiveMap() {
                 if (lastTime) {
                   const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
                   idleStatusHtml = (
-                    <div className={`font-bold text-[11px] mt-1.5 flex items-center gap-1 ${diffMins > 10 ? 'text-[#ff4b4b]' : 'text-[#C5A066]'}`}>
+                    <div className={`font-bold text-[11px] mt-1.5 flex items-center gap-1 ${diffMins > 10 ? 'text-[var(--map-critical)]' : 'text-[var(--map-gold)]'}`}>
                       <AlertTriangle size={11} /> Ανενεργός: {diffMins} λ.
                     </div>
                   );
@@ -587,24 +588,37 @@ export default function LiveMap() {
               const markerIcon = L.divIcon({
                 className: 'custom-div-icon',
                 html: renderToString(
-                  <div style={{
-                    width: '38px', height: '38px', borderRadius: '50%', background: '#111',
-                    border: `2px solid ${markerColor}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: `0 0 15px ${markerGlow}`,
-                    opacity: noSignal ? 0.75 : 1,
-                    transition: 'all 0.3s ease'
-                  }}>
-                    <Bike size={18} color={markerColor} />
+                  <div className="flex flex-col items-center" style={{ width: '90px' }}>
+                    <div style={{
+                      width: '38px', height: '38px', borderRadius: '50%', background: '#111',
+                      border: `2px solid ${markerColor}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: `0 0 15px ${markerGlow}`,
+                      opacity: noSignal ? 0.75 : 1,
+                      transition: 'all 0.3s ease'
+                    }}>
+                      <Bike size={18} color={markerColor} />
+                    </div>
+                    {/* Μόνιμη ετικέτα: μόνο όνομα, ώστε να μην αλληλοκαλύπτονται με 8+ διανομείς —
+                        οι λεπτομέρειες (μπαταρία/σήμα/κατάσταση) μετακόμισαν στο hover Tooltip. */}
+                    <div style={{
+                      marginTop: '2px', padding: '1px 6px', borderRadius: '999px',
+                      background: 'rgba(17,17,17,0.85)', color: markerColor,
+                      fontSize: '10px', fontWeight: 700, lineHeight: '14px', whiteSpace: 'nowrap',
+                      maxWidth: '86px', overflow: 'hidden', textOverflow: 'ellipsis',
+                      border: `1px solid ${markerColor}55`,
+                    }}>
+                      {driver.full_name}
+                    </div>
                   </div>
                 ),
-                iconSize: [38, 38],
-                iconAnchor: [19, 19],
+                iconSize: [90, 58],
+                iconAnchor: [45, 19],
               });
 
               return driver.latitude && driver.longitude ? (
                 <Marker key={driver.id} position={[driver.latitude, driver.longitude]} icon={markerIcon}>
-                  <Tooltip permanent direction="top" offset={[0, -22]} opacity={1} className={`premium-tooltip ${isBusy ? 'premium-tooltip-busy' : ''}`}>
+                  <Tooltip direction="top" offset={[0, -22]} opacity={1} className={`premium-tooltip ${isBusy ? 'premium-tooltip-busy' : ''}`}>
                     <div className="leading-relaxed min-w-[120px]">
                       <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-gray-700/50">
                         <div className={`w-2 h-2 rounded-full ${!noSignal && isBusy ? 'animate-pulse' : ''}`} style={{ background: markerColor }}></div>
@@ -616,7 +630,7 @@ export default function LiveMap() {
                         </div>
                       )}
                       {noSignal && (
-                        <div className="font-bold text-[11px] mb-0.5 flex items-center gap-1" style={{ color: '#B0B7C3' }}>
+                        <div className="font-bold text-[11px] mb-0.5 flex items-center gap-1" style={{ color: 'var(--map-offline-text)' }}>
                           <AlertTriangle size={11} /> Χωρίς σήμα: {Math.floor(ageMin)} λ.
                         </div>
                       )}
@@ -866,7 +880,7 @@ export default function LiveMap() {
                 let subColor = 'var(--text-muted)';
 
                 if (noSignal) {
-                  dotColor = '#8892A0';
+                  dotColor = 'var(--map-offline)';
                   subText = `Χωρίς σήμα: ${Math.floor(ageMin)} λ.`;
                   subColor = 'var(--text-muted)';
                 } else if (activeCount > 0) {
@@ -932,7 +946,7 @@ function WorkloadChart({ matrix, loading, isDark }) {
     <div className="p-3" style={{ width: 'min(82vw, 600px)' }}>
       {/* Επιλογή ημέρας */}
       <div className="flex items-center justify-between mb-2.5">
-        <h4 className="text-[12px] font-bold flex items-center gap-1.5" style={{ color: '#C5A066' }}>
+        <h4 className="text-[12px] font-bold flex items-center gap-1.5" style={{ color: 'var(--map-gold)' }}>
           <Activity size={14} /> Φόρτος ανά Ώρα
         </h4>
         <span className="text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
@@ -950,9 +964,9 @@ function WorkloadChart({ matrix, loading, isDark }) {
               onClick={() => setSelectedDay(day)}
               className="flex-1 py-1 rounded-lg text-[11px] font-bold transition-all relative"
               style={{
-                background: isSel ? 'linear-gradient(135deg,#C5A066,#a8843f)' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
+                background: isSel ? 'linear-gradient(135deg, var(--map-gold), var(--map-gold-deep))' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
                 color: isSel ? '#111' : (isDark ? '#cbd5e1' : '#334155'),
-                border: isToday && !isSel ? '1px solid #C5A066' : '1px solid transparent',
+                border: isToday && !isSel ? '1px solid var(--map-gold)' : '1px solid transparent',
               }}
               title={DOW_FULL[day] + (isToday ? ' (Σήμερα)' : '')}
             >
@@ -968,7 +982,7 @@ function WorkloadChart({ matrix, loading, isDark }) {
           {DOW_FULL[selectedDay]}
         </span>
         {selectedDay === todayDow && (
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(56,239,125,0.15)', color: '#16a34a' }}>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'var(--map-tint-green)', color: 'var(--map-green-deep)' }}>
             Σήμερα
           </span>
         )}
@@ -997,7 +1011,7 @@ function WorkloadChart({ matrix, loading, isDark }) {
                 {/* Τιμή πάνω από τη μπάρα */}
                 <span
                   className="text-[8px] font-bold mb-0.5 transition-opacity"
-                  style={{ color: isNow ? '#38EF7D' : (isDark ? '#cbd5e1' : '#475569'), opacity: val > 0 ? 1 : 0.3 }}
+                  style={{ color: isNow ? 'var(--map-green)' : (isDark ? '#cbd5e1' : '#475569'), opacity: val > 0 ? 1 : 0.3 }}
                 >
                   {val > 0 ? fmt(val) : ''}
                 </span>
@@ -1008,15 +1022,15 @@ function WorkloadChart({ matrix, loading, isDark }) {
                     height: `${Math.max(pct, val > 0 ? 4 : 0)}%`,
                     minHeight: val > 0 ? 3 : 0,
                     background: isNow
-                      ? 'linear-gradient(180deg,#38EF7D,#16a34a)'
-                      : 'linear-gradient(180deg,#D9B877,#C5A066)',
-                    boxShadow: isNow ? '0 0 8px rgba(56,239,125,0.5)' : 'none',
+                      ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
+                      : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
+                    boxShadow: isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
                   }}
                 />
                 {/* Ώρα */}
                 <span
                   className="text-[8px] mt-1"
-                  style={{ color: isNow ? '#38EF7D' : (isDark ? '#64748b' : '#94a3b8'), fontWeight: isNow ? 700 : 400 }}
+                  style={{ color: isNow ? 'var(--map-green)' : (isDark ? '#64748b' : '#94a3b8'), fontWeight: isNow ? 700 : 400 }}
                 >
                   {h}
                 </span>

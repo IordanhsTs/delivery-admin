@@ -9,6 +9,7 @@ import CreateOrder from './CreateOrder';
 import Messages from './Messages';
 import Login from './Login';
 import ReadOnlyBanner from './ReadOnlyBanner';
+import ConfirmDialogHost from './ConfirmDialog';
 import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -97,8 +98,9 @@ const NAV_ITEMS = [
   { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
 ];
 
+// Ο χάρτης ('map') μένει εκτός αυτού του object — φορτώνεται ξεχωριστά και μόνιμα
+// mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
 const VIEW_COMPONENTS = {
-  'map':          <LiveMap />,
   'create-order': <CreateOrder />,
   'messages':     <Messages />,
   'billing':      <BillingDashboard />,
@@ -230,6 +232,7 @@ export default function App() {
       style={{ backgroundColor: 'var(--bg-primary)', fontFamily: 'Inter, sans-serif' }}
     >
       <Toaster position="bottom-center" theme={isDark ? 'dark' : 'light'} richColors />
+      <ConfirmDialogHost />
       {/* ══════════════════════════════
           SIDEBAR
       ══════════════════════════════ */}
@@ -490,18 +493,25 @@ export default function App() {
 
         {/* Ο χάρτης θέλει όλο τον χώρο (full-bleed)· οι υπόλοιπες καρτέλες κρατούν το padding */}
         <div className={activeTab === 'map' ? 'relative z-[1] h-full' : 'relative z-[1] p-4 md:p-8 min-h-full'}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="h-full"
-            >
-              {VIEW_COMPONENTS[activeTab]}
-            </motion.div>
-          </AnimatePresence>
+          {/* Μόνιμα mounted: κρύβεται με CSS αντί να ξηλώνεται, ώστε να μη χάνει θέση/zoom
+              και να μην ξανατρέχει fetch+subscriptions κάθε φορά που φεύγεις απ' την καρτέλα. */}
+          <div className={activeTab === 'map' ? 'h-full' : 'hidden'}>
+            <LiveMap />
+          </div>
+          {activeTab !== 'map' && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                {VIEW_COMPONENTS[activeTab]}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </div>
       </div>
     </div>
