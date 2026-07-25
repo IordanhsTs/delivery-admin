@@ -3,6 +3,9 @@ import { renderToString } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
@@ -17,15 +20,45 @@ const TILES = {
   light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
 };
 
+// Τα εικονίδια έρχονται από το ΙΔΙΟ το πακέτο leaflet (node_modules) και μπαίνουν
+// στο bundle από το Vite — όχι από CDN. Έτσι ο χάρτης δείχνει σωστούς δείκτες
+// ακόμα κι όταν δεν υπάρχει πρόσβαση στο cdnjs (offline/κλειστό δίκτυο πελάτη).
+// Bonus: πριν τραβούσαμε icons v1.7.1 ενώ το εγκατεστημένο leaflet είναι 1.9.4.
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
 });
 
-// Ήχος ειδοποίησης (ορίζεται μία φορά εκτός component για επαναχρησιμοποίηση)
-const alertSound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+// ── Ήχος ειδοποίησης νέας παραγγελίας ───────────────────────────────────────
+// Παράγεται τοπικά με Web Audio αντί να κατεβαίνει .ogg από το actions.google.com:
+// δουλεύει offline, δεν εξαρτάται από τρίτο host, και δεν ενσωματώνουμε ξένο
+// ηχητικό αρχείο (θέμα άδειας χρήσης) σε προϊόν που πουλιέται σε πελάτη.
+let audioCtx = null;
+function playAlertSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    audioCtx = audioCtx || new Ctx();
+    // Οι browsers ξεκινούν το context σε "suspended" μέχρι την πρώτη αλληλεπίδραση.
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);          // σύντομο «μπιπ» (A5)
+    gain.gain.setValueAtTime(0.0001, t);           // ράμπες αντί για απότομο on/off
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.26);
+  } catch (e) {
+    console.log('Ο ήχος ειδοποίησης δεν παίχτηκε:', e);
+  }
+}
 
 // ── Σταθερές για το heatmap φόρτου ──────────────────────────────────────────
 // JS getDay(): 0=Κυρ ... 6=Σαβ. Τα εμφανίζουμε ξεκινώντας από Δευτέρα.
@@ -185,6 +218,36 @@ export default function LiveMap() {
   // ημέρας εβδομάδας που εμφανίζονται στα δεδομένα → μέσος όρος ανά slot.
   const fetchWorkloadStats = async () => {
     setLoadingWorkload(true);
+
+    // Ο Postgres κάνει την ομαδοποίηση και γυρνάει 168 γραμμές (7×24), αντί να
+    // κατεβάζουμε έως 10.000 παραγγελίες στον browser σε κάθε νέα παραγγελία.
+    const { data, error } = await supabase.rpc('workload_stats');
+
+    if (!error && Array.isArray(data)) {
+      const matrix = {};
+      let max = 0;
+      DOW_ORDER.forEach(d => { matrix[d] = {}; for (let h = 0; h < 24; h++) matrix[d][h] = 0; });
+      data.forEach(row => {
+        // Το numeric του Postgres έρχεται ως string στο JSON — πάντα Number().
+        const avg = Number(row.avg_orders) || 0;
+        if (matrix[row.dow]) matrix[row.dow][row.hour] = avg;
+        if (avg > max) max = avg;
+      });
+      setWorkloadMatrix(matrix);
+      setWorkloadMax(max);
+      setLoadingWorkload(false);
+      return;
+    }
+
+    // Fallback στον παλιό client-side υπολογισμό: καλύπτει το παράθυρο όπου το
+    // frontend έχει βγει αλλά το migration 0010 δεν έχει τρέξει ακόμα σε κάποιο
+    // backend (π.χ. standby που δεν έχει συγχρονιστεί).
+    console.warn('[φόρτος] το RPC workload_stats δεν απάντησε, πέφτω σε client-side:', error);
+    await fetchWorkloadStatsFallback();
+  };
+
+  // Παλιά μέθοδος — διατηρείται μόνο ως δίχτυ ασφαλείας (βλ. παραπάνω).
+  const fetchWorkloadStatsFallback = async () => {
     const { data, error } = await supabase
       .from('orders')
       .select('created_at, status')
@@ -309,8 +372,7 @@ export default function LiveMap() {
 
         // ΗΧΗΤΙΚΗ ΕΙΔΟΠΟΙΗΣΗ ΓΙΑ ΝΕΑ ΠΑΡΑΓΓΕΛΙΑ
         if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
-          alertSound.currentTime = 0; // Επαναφορά στην αρχή του ήχου
-          alertSound.play().catch(e => console.log('Το αυτόματο play μπλοκαρίστηκε από τον browser:', e));
+          playAlertSound();
           toast.info("Νέα παραγγελία!");
           // Ανανέωση heatmap ώστε να "εκπαιδεύεται" με τις νέες παραγγελίες
           fetchWorkloadStats();
