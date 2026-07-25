@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { renderToString } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -8,10 +8,11 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatKm, formatEuro, formatCountdown, orderDurations } from './distance';
 
 // Tile layer URLs
 const TILES = {
@@ -105,6 +106,37 @@ function MapCenterHandler({ center }) {
   return null;
 }
 
+// ── Chip απόστασης (+ επιπλέον χρέωση καταστήματος όταν υπάρχει) ────────────
+function DistanceChip({ order }) {
+  if (order.distance_km === null || order.distance_km === undefined) return null;
+  const hasSurcharge = Number(order.surcharge) > 0;
+  return (
+    <span
+      className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+      style={hasSurcharge
+        ? { color: 'var(--warning)', backgroundColor: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }
+        : { color: 'var(--text-muted)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+      title={hasSurcharge ? `Επιπλέον χρέωση καταστήματος: ${formatEuro(order.surcharge)}` : 'Εντός ζώνης χωρίς επιπλέον χρέωση'}
+    >
+      <Route size={10} />
+      {formatKm(order.distance_km)}
+      {hasSurcharge ? ` · +${formatEuro(order.surcharge)}` : ''}
+    </span>
+  );
+}
+
+// Αύξων αριθμός θέσης μέσα στη λίστα (αίτημα πελάτη: «1 2 3 ενεργές και 1 2 3 αποδεκτές»).
+function OrderNumber({ n }) {
+  return (
+    <span
+      className="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded text-[11px] font-black tabular-nums"
+      style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
+    >
+      {n}
+    </span>
+  );
+}
+
 // ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
 function RailSection({ Icon, title, count, tint, children }) {
   return (
@@ -137,6 +169,10 @@ export default function LiveMap() {
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [assigningOrderId, setAssigningOrderId] = useState(null);
+  // Μετάθεση ήδη ανατεθειμένης παραγγελίας σε άλλον διανομέα (ανοιχτό dropdown).
+  const [reassigningOrderId, setReassigningOrderId] = useState(null);
+  // Ποιες παραγγελίες ήταν 'scheduled' πριν το τελευταίο realtime event.
+  const scheduledIdsRef = useRef(new Set());
   const [lastCompletedTimes, setLastCompletedTimes] = useState({});
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -164,10 +200,13 @@ export default function LiveMap() {
     })();
   }, []);
 
+  // Το ρολόι χτυπά ανά δευτερόλεπτο ΜΟΝΟ όσο υπάρχει προγραμματισμένη παραγγελία με
+  // αντίστροφη μέτρηση να δείξουμε· αλλιώς ανά λεπτό (όσο χρειάζονται οι χρόνοι αναμονής).
+  const hasScheduled = orders.some(o => o.status === 'scheduled');
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const timer = setInterval(() => setCurrentTime(new Date()), hasScheduled ? 1000 : 60000);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasScheduled]);
 
   const fetchDrivers = async () => {
     const { data, error } = await supabase
@@ -182,11 +221,28 @@ export default function LiveMap() {
   const fetchActiveOrders = async () => {
     const { data, error } = await supabase
       .from('orders')
-      .select(`id, address, comments, status, driver_id, created_at, stores ( name ), drivers ( full_name )`)
-      .in('status', ['pending', 'accepted'])
+      .select(`id, address, comments, status, driver_id, created_at, accepted_at, picked_up_at, scheduled_at, distance_km, surcharge, stores ( name ), drivers ( full_name )`)
+      .in('status', ['scheduled', 'pending', 'accepted'])
       .order('created_at', { ascending: false });
-    if (data) setOrders(data);
+    if (data) {
+      setOrders(data);
+      // Ποιες είναι αυτή τη στιγμή προγραμματισμένες — το χρειάζεται ο realtime
+      // handler για να καταλάβει τη μετάβαση 'scheduled' → 'pending'.
+      scheduledIdsRef.current = new Set(data.filter(o => o.status === 'scheduled').map(o => o.id));
+    }
     if (error) console.error("Σφάλμα παραγγελιών:", error);
+  };
+
+  // Απελευθέρωση των προγραμματισμένων παραγγελιών που έφτασε η ώρα τους
+  // ('scheduled' → 'pending'). Ατομικό UPDATE στη βάση, οπότε είναι ακίνδυνο να
+  // το καλούν παράλληλα admin/κατάστημα/διανομείς — ο πρώτος κερδίζει και το
+  // realtime event ενημερώνει τους υπόλοιπους.
+  const releaseDueOrders = async () => {
+    try {
+      await supabase.rpc('release_due_orders');
+    } catch {
+      /* σιωπηλά — ξαναπροσπαθεί ο επόμενος κύκλος σε 15" */
+    }
   };
 
   const fetchLastCompletedTimes = async () => {
@@ -317,6 +373,9 @@ export default function LiveMap() {
     fetchWorkloadStats();
     fetchTodayDeliveryStats();
 
+    releaseDueOrders();
+    const releaseTimer = setInterval(releaseDueOrders, 15000);
+
     const driversChannel = supabase
       .channel('public:drivers_map_tracking')
       .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
@@ -377,9 +436,27 @@ export default function LiveMap() {
           // Ανανέωση heatmap ώστε να "εκπαιδεύεται" με τις νέες παραγγελίες
           fetchWorkloadStats();
         }
+
+        // Προγραμματισμένη παραγγελία που μόλις «ωρίμασε»: για τον admin είναι
+        // νέα δουλειά ακριβώς όπως μια κανονική, οπότε ηχεί το ίδιο.
+        //
+        // Δεν συγκρίνουμε με το payload.old — το Supabase realtime στέλνει εκεί
+        // ΜΟΝΟ το primary key (εκτός αν ο πίνακας έχει REPLICA IDENTITY FULL).
+        // Κρατάμε λοιπόν εμείς ποιες ήταν προγραμματισμένες πριν το event.
+        if (
+          payload.eventType === 'UPDATE' &&
+          payload.new?.status === 'pending' &&
+          scheduledIdsRef.current.has(payload.new.id)
+        ) {
+          scheduledIdsRef.current.delete(payload.new.id);
+          playAlertSound();
+          toast.info("Προγραμματισμένη παραγγελία μόλις στάλθηκε!");
+          fetchWorkloadStats();
+        }
       }).subscribe();
 
     return () => {
+      clearInterval(releaseTimer);
       supabase.removeChannel(driversChannel);
       supabase.removeChannel(ordersChannel);
     };
@@ -398,6 +475,45 @@ export default function LiveMap() {
       toast.success("Η παραγγελία ανατέθηκε επιτυχώς!");
       setAssigningOrderId(null);
     }
+  };
+
+  // ── Μετάθεση παραγγελίας σε ΑΛΛΟΝ διανομέα ────────────────────────────────
+  // Επιτρέπεται ΜΟΝΟ όσο η παραγγελία είναι 'accepted' (απόφαση χρήστη): πριν την
+  // αποδοχή γίνεται απλή «Ανάθεση», και μετά την παράδοση δεν έχει νόημα. Το
+  // `.eq('status','accepted')` το επιβάλλει και στη ΒΑΣΗ, όχι μόνο στο UI, ώστε
+  // να μη γλιστρήσει μετάθεση σε παραγγελία που μόλις ολοκληρώθηκε.
+  //
+  // Ο ήχος στον νέο διανομέα δεν στέλνεται από εδώ: η ίδια η αλλαγή driver_id
+  // φτάνει στο κινητό του ως realtime event και η εφαρμογή του χτυπά τον
+  // επαναλαμβανόμενο συναγερμό ανάθεσης (βλ. final-app DriverDashboard).
+  const reassignOrder = async (orderId, newDriverId, newDriverName) => {
+    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
+
+    const isConfirmed = await confirmDialog(
+      `Μετάθεση της παραγγελίας στον διανομέα ${newDriverName};`,
+      { confirmLabel: 'Μετάθεση' }
+    );
+    if (!isConfirmed) return;
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ driver_id: newDriverId, accepted_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('status', 'accepted')
+      .select();
+
+    if (error) {
+      toast.error("Υπήρξε σφάλμα κατά τη μετάθεση.");
+      console.error(error);
+      return;
+    }
+    if (!data || data.length === 0) {
+      toast.warning("Η παραγγελία δεν είναι πλέον σε κατάσταση «αποδεκτή» — η μετάθεση ακυρώθηκε.");
+      fetchActiveOrders();
+      return;
+    }
+    toast.success(`Η παραγγελία μετατέθηκε στον ${newDriverName}.`);
+    setReassigningOrderId(null);
   };
 
   const cancelOrder = async (orderId) => {
@@ -457,6 +573,11 @@ export default function LiveMap() {
 
   const pendingOrders = orders.filter(o => o.status === 'pending');
   const acceptedOrders = orders.filter(o => o.status === 'accepted');
+  // Προγραμματισμένες: η πιο κοντινή στην αποστολή πρώτη.
+  const scheduledOrders = orders
+    .filter(o => o.status === 'scheduled')
+    .sort((a, b) => new Date(a.scheduled_at || 0) - new Date(b.scheduled_at || 0));
+
 
   const signalAgeMin = (driver) =>
     driver.last_seen ? (currentTime.getTime() - new Date(driver.last_seen).getTime()) / 60000 : Infinity;
@@ -731,6 +852,60 @@ export default function LiveMap() {
           className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto"
           style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-default)' }}
         >
+          {/* Προγραμματισμένες (καθυστερημένη αποστολή από το κατάστημα) */}
+          {scheduledOrders.length > 0 && (
+            <RailSection Icon={Hourglass} title="Προγραμματισμένες" count={scheduledOrders.length} tint="var(--text-secondary)">
+              <AnimatePresence>
+                {scheduledOrders.map((order, idx) => {
+                  const remainingMs = order.scheduled_at
+                    ? new Date(order.scheduled_at).getTime() - currentTime.getTime()
+                    : 0;
+                  return (
+                    <motion.div
+                      key={order.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      transition={{ duration: 0.18 }}
+                      className="rounded-lg p-2.5 mb-2 last:mb-0 text-[13px]"
+                      style={railCardStyle('var(--text-muted)')}
+                    >
+                      <div className="flex items-center gap-1 flex-wrap leading-relaxed">
+                        <OrderNumber n={idx + 1} />
+                        <Building size={12} style={{ color: 'var(--text-muted)' }} />
+                        <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                        <MapPin size={12} style={{ color: 'var(--text-muted)' }} />
+                        <span style={{ color: 'var(--text-secondary)' }}>{order.address}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-1.5">
+                        <span
+                          className="text-[11px] font-bold px-2 py-1 rounded-md flex items-center gap-1 tabular-nums"
+                          style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)' }}
+                          title="Χρόνος μέχρι να σταλεί αυτόματα στους διανομείς"
+                        >
+                          <Timer size={12} /> {formatCountdown(remainingMs)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <DistanceChip order={order} />
+                          <button
+                            onClick={() => cancelOrder(order.id)}
+                            className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-xs transition-all flex items-center justify-center"
+                            style={{ color: 'var(--danger)', backgroundColor: 'var(--danger-bg)', border: '1px solid var(--danger-border)' }}
+                            title="Ακύρωση Παραγγελίας"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </RailSection>
+          )}
+
           {/* Εκκρεμείς */}
           <RailSection Icon={Clock} title="Εκκρεμείς" count={pendingOrders.length} tint="var(--accent)">
             {pendingOrders.length === 0 ? (
@@ -739,7 +914,7 @@ export default function LiveMap() {
               </p>
             ) : (
               <AnimatePresence>
-                {pendingOrders.map(order => {
+                {pendingOrders.map((order, idx) => {
                   const isLate = (currentTime.getTime() - new Date(order.created_at).getTime()) > 300000;
                   return (
                     <motion.div
@@ -753,12 +928,14 @@ export default function LiveMap() {
                     >
                       <div className="leading-relaxed space-y-1 text-[13px]">
                         <div className="flex items-center gap-1">
+                          <OrderNumber n={idx + 1} />
                           <Building size={12} style={{ color: 'var(--text-muted)' }} />
                           <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <MapPin size={12} style={{ color: 'var(--text-muted)' }} />
                           <span style={{ color: 'var(--text-secondary)' }}>{order.address}</span>
+                          <DistanceChip order={order} />
                         </div>
 
                         {order.comments && (
@@ -860,7 +1037,12 @@ export default function LiveMap() {
               </p>
             ) : (
               <AnimatePresence>
-                {acceptedOrders.map(order => (
+                {acceptedOrders.map((order, idx) => {
+                  // Οι ΔΥΟ χρόνοι που ζήτησε ο πελάτης: πόση ώρα ήταν «ενεργή»
+                  // (πριν την πάρει διανομέας) και πόση είναι «αποδεκτή» — ώστε να
+                  // βγαίνει ο πραγματικός συνολικός χρόνος της παραγγελίας.
+                  const { activeMins, acceptedMins, totalMins } = orderDurations(order, currentTime);
+                  return (
                   <motion.div
                     key={order.id}
                     initial={{ opacity: 0, y: 8 }}
@@ -871,11 +1053,22 @@ export default function LiveMap() {
                     style={railCardStyle('var(--success)')}
                   >
                     <div className="flex items-center gap-1 flex-wrap leading-relaxed">
+                      <OrderNumber n={idx + 1} />
                       <Building size={12} style={{ color: 'var(--text-muted)' }} />
                       <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
                       <span style={{ color: 'var(--text-muted)' }}>➔</span>
                       <MapPin size={12} style={{ color: 'var(--text-muted)' }} />
                       <span style={{ color: 'var(--text-secondary)' }}>{order.address}</span>
+                      <DistanceChip order={order} />
+                      {order.picked_up_at && (
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                          style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
+                          title="Ο διανομέας έχει παραλάβει την παραγγελία από το κατάστημα"
+                        >
+                          <Package size={10} /> Παρελήφθη
+                        </span>
+                      )}
                     </div>
 
                     {order.comments && (
@@ -898,11 +1091,22 @@ export default function LiveMap() {
 
                       <div className="flex items-center gap-1.5">
                         <span
-                          className="text-[11px] font-bold px-2 py-1 rounded-md flex items-center gap-1"
+                          className="text-[11px] font-bold px-2 py-1 rounded-md flex items-center gap-1 tabular-nums"
                           style={{ color: 'var(--accent)', backgroundColor: 'var(--accent-muted)', border: '1px solid var(--border-subtle)' }}
+                          title={`Ενεργή ${activeMins} λ. (μέχρι την αποδοχή) + αποδεκτή ${acceptedMins} λ. = ${totalMins} λ. συνολικά`}
                         >
-                          <Clock size={12} /> {getElapsedTime(order.created_at)}
+                          <Clock size={12} /> {activeMins}′ + {acceptedMins}′
                         </span>
+                        <button
+                          onClick={() => setReassigningOrderId(reassigningOrderId === order.id ? null : order.id)}
+                          className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all flex items-center justify-center"
+                          style={reassigningOrderId === order.id
+                            ? { color: '#fff', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
+                            : { color: 'var(--accent)', backgroundColor: 'var(--accent-muted)', border: '1px solid var(--border-subtle)' }}
+                          title="Μετάθεση σε άλλον διανομέα"
+                        >
+                          <Repeat size={14} />
+                        </button>
                         <button
                           onClick={() => completeOrder(order.id)}
                           className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all flex items-center justify-center"
@@ -921,8 +1125,48 @@ export default function LiveMap() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Επιλογή νέου διανομέα για μετάθεση */}
+                    {reassigningOrderId === order.id && (
+                      <div
+                        className="mt-2 p-2 rounded-lg"
+                        style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)' }}
+                      >
+                        <p className="m-0 mb-1.5 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                          Μετάθεση σε:
+                        </p>
+                        {visibleDrivers.filter(d => d.id !== order.driver_id).length === 0 ? (
+                          <p className="text-[11px] m-0" style={{ color: 'var(--danger)' }}>
+                            Δεν υπάρχει άλλος διανομέας online.
+                          </p>
+                        ) : (
+                          visibleDrivers.filter(d => d.id !== order.driver_id).map(driver => {
+                            const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
+                            return (
+                              <button
+                                key={driver.id}
+                                onClick={() => reassignOrder(order.id, driver.id, driver.full_name)}
+                                className="hover-row-glass flex justify-between items-center w-full text-left p-2 mb-1 rounded-md cursor-pointer text-xs transition-colors"
+                                style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+                              >
+                                <span className="font-bold flex items-center gap-1"><Bike size={12} /> {driver.full_name}</span>
+                                <span
+                                  className="px-1.5 py-0.5 rounded font-bold text-[10px]"
+                                  style={activeCount > 0
+                                    ? { color: 'var(--accent)', backgroundColor: 'var(--accent-muted)', border: '1px solid var(--accent)' }
+                                    : { color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
+                                >
+                                  {activeCount > 0 ? `Κρατάει (${activeCount})` : 'Ελεύθερος'}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
                   </motion.div>
-                ))}
+                  );
+                })}
               </AnimatePresence>
             )}
           </RailSection>

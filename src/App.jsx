@@ -7,7 +7,9 @@ import StoreManagement from './StoreManagement';
 import Statistics from './Statistics';
 import CreateOrder from './CreateOrder';
 import Messages from './Messages';
+import OrderSearch from './OrderSearch';
 import Login from './Login';
+import { useStoreMessages } from './useStoreMessages';
 import ReadOnlyBanner from './ReadOnlyBanner';
 import ConfirmDialogHost from './ConfirmDialog';
 import { Toaster } from 'sonner';
@@ -89,9 +91,17 @@ const MessageSquareIcon = () => (
   </svg>
 );
 
+const SearchIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </svg>
+);
+
 const NAV_ITEMS = [
   { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
   { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
+  { id: 'search',       Icon: SearchIcon,   shortLabel: 'Αναζήτηση',  fullLabel: 'Αναζήτηση' },
   { id: 'messages',     Icon: MessageSquareIcon, shortLabel: 'Μηνύματα', fullLabel: 'Μηνύματα' },
   { id: 'billing',      Icon: ReceiptIcon,  shortLabel: 'Εκκαθάριση', fullLabel: 'Εκκαθάριση' },
   { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
@@ -102,11 +112,28 @@ const NAV_ITEMS = [
 // mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
 const VIEW_COMPONENTS = {
   'create-order': <CreateOrder />,
+  'search':       <OrderSearch />,
   'messages':     <Messages />,
   'billing':      <BillingDashboard />,
   'stores':       <StoreManagement />,
   'stats':        <Statistics />,
 };
+
+// Κόκκινη κουκκίδα με το πλήθος αδιάβαστων μηνυμάτων από καταστήματα. Ζει σε δικό
+// του component ώστε το realtime subscription να στήνεται ΜΟΝΟ αφού συνδεθεί ο admin.
+function UnreadMessagesBadge() {
+  const { unreadCount } = useStoreMessages();
+  if (!unreadCount) return null;
+  return (
+    <span
+      className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center"
+      style={{ backgroundColor: 'var(--danger)', color: '#fff' }}
+      title={`${unreadCount} αδιάβαστα μηνύματα από καταστήματα`}
+    >
+      {unreadCount}
+    </span>
+  );
+}
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
@@ -266,10 +293,11 @@ export default function App() {
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
-                className="flex flex-col items-center justify-center gap-0.5 py-1.5 px-2 rounded-lg transition-all duration-200 shrink-0 min-w-[58px]"
+                className="relative flex flex-col items-center justify-center gap-0.5 py-1.5 px-2 rounded-lg transition-all duration-200 shrink-0 min-w-[58px]"
                 style={getNavStyle(id)}
               >
                 <Icon />
+                {id === 'messages' && <UnreadMessagesBadge />}
                 <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
               </button>
             ))}
@@ -352,7 +380,7 @@ export default function App() {
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
+              className="relative flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
               style={getNavStyle(id)}
               onMouseEnter={e => {
                 if (activeTab !== id) {
@@ -367,7 +395,10 @@ export default function App() {
                 }
               }}
             >
-              <Icon />
+              <span className="relative flex items-center">
+                <Icon />
+                {id === 'messages' && <UnreadMessagesBadge />}
+              </span>
               <span className="text-[10px] md:text-sm font-semibold leading-none">
                 <span className="md:hidden">{shortLabel}</span>
                 <span className="hidden md:inline">{fullLabel || shortLabel}</span>

@@ -4,6 +4,7 @@ import { BarChart2, Clock, Package, Trophy, TrendingUp, RefreshCcw, ChevronUp, F
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { formatKm, orderDurations } from './distance';
 
 export default function Statistics() {
   const [orders, setOrders] = useState([]);
@@ -24,11 +25,13 @@ export default function Statistics() {
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
   };
 
+  // ΠΡΟΕΠΙΛΟΓΗ = ΣΗΜΕΡΑ (αίτημα πελάτη): από τα μεσάνυχτα μέχρι το λεπτό που
+  // ανοίγει η καρτέλα — όχι η τελευταία εβδομάδα που ίσχυε πριν.
   const today = new Date();
-  const lastWeek = new Date(today);
-  lastWeek.setDate(lastWeek.getDate() - 7);
-  
-  const [startDate, setStartDate] = useState(formatDateTimeLocal(lastWeek));
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function Statistics() {
     // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό
     let query = supabase
       .from('orders')
-      .select('id, created_at, accepted_at, completed_at, status, address, store_id, driver_id, stores ( name ), drivers ( full_name )')
+      .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores ( name ), drivers ( full_name )')
       .eq('status', 'completed')
       .gte('created_at', startIso)
       .lte('created_at', endIso)
@@ -351,10 +354,11 @@ export default function Statistics() {
                   </thead>
                   <tbody className="text-sm divide-y divide-[#C5A066]/10">
                     {orders.map(order => {
-                      const mins = order.created_at && order.completed_at 
-                        ? Math.floor((new Date(order.completed_at) - new Date(order.created_at)) / 60000) 
-                        : '-';
-                      
+                      // Ο πελάτης θέλει και τα δύο σκέλη ώστε να φαίνεται πού πήγε ο
+                      // χρόνος: αναμονή για διανομέα vs. αυτή καθαυτή η διανομή.
+                      const { activeMins, acceptedMins, totalMins } = orderDurations(order);
+                      const mins = order.completed_at ? totalMins : '-';
+
                       return (
                         <tr key={order.id} className="hover-row-glass transition-colors">
                           <td className="p-4 text-adaptive">
@@ -363,7 +367,12 @@ export default function Statistics() {
                           </td>
                           <td className="p-4">
                             <div className="font-bold text-adaptive-light">{order.stores?.name}</div>
-                            <div className="text-adaptive text-xs mt-0.5 flex items-center gap-1"><MapPin size={12} /> <span className="text-adaptive">{order.address || 'Μη διαθέσιμη διεύθυνση'}</span></div>
+                            <div className="text-adaptive text-xs mt-0.5 flex items-center gap-1 flex-wrap">
+                              <MapPin size={12} /> <span className="text-adaptive">{order.address || 'Μη διαθέσιμη διεύθυνση'}</span>
+                              {order.distance_km !== null && order.distance_km !== undefined && (
+                                <span className="text-adaptive opacity-80">· {formatKm(order.distance_km)}</span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-adaptive-light font-medium">
                             {order.drivers?.full_name}
@@ -372,6 +381,9 @@ export default function Statistics() {
                             <span className={`inline-block border px-2.5 py-1 rounded-full text-xs font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
                               {mins} λ.
                             </span>
+                            <div className="text-adaptive text-[10px] mt-1 tabular-nums" title="Ενεργή (αναμονή για διανομέα) + Αποδεκτή (διανομή)">
+                              {activeMins}′ ενεργή + {acceptedMins}′ αποδεκτή
+                            </div>
                           </td>
                         </tr>
                       );
@@ -383,19 +395,26 @@ export default function Statistics() {
               {/* Mobile List (Hidden on desktop) */}
               <div className="md:hidden flex flex-col divide-y divide-[#C5A066]/10">
                 {orders.map(order => {
-                  const mins = order.created_at && order.completed_at 
-                    ? Math.floor((new Date(order.completed_at) - new Date(order.created_at)) / 60000) 
-                    : '-';
-                  
+                  const { activeMins, acceptedMins, totalMins } = orderDurations(order);
+                  const mins = order.completed_at ? totalMins : '-';
+
                   return (
                     <div key={order.id} className="p-4 hover-row-glass">
                       <div className="flex justify-between items-start mb-2">
                         <div className="font-bold text-adaptive-light text-[15px]">{order.stores?.name}</div>
-                        <span className={`border px-2 py-0.5 rounded text-[11px] font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
-                          {mins} λεπτά
-                        </span>
+                        <div className="text-right">
+                          <span className={`border px-2 py-0.5 rounded text-[11px] font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
+                            {mins} λεπτά
+                          </span>
+                          <div className="text-adaptive text-[10px] mt-1 tabular-nums">{activeMins}′ + {acceptedMins}′</div>
+                        </div>
                       </div>
-                      <div className="text-adaptive text-sm mb-2 flex items-center gap-1"><MapPin size={14} /> {order.address || 'Μη διαθέσιμη διεύθυνση'}</div>
+                      <div className="text-adaptive text-sm mb-2 flex items-center gap-1 flex-wrap">
+                        <MapPin size={14} /> {order.address || 'Μη διαθέσιμη διεύθυνση'}
+                        {order.distance_km !== null && order.distance_km !== undefined && (
+                          <span className="opacity-80">· {formatKm(order.distance_km)}</span>
+                        )}
+                      </div>
                       <div className="flex justify-between items-center text-xs text-adaptive pt-2 border-t border-[#C5A066]/10">
                         <span className="flex items-center gap-1"><User size={12} /> {order.drivers?.full_name}</span>
                         <span className="flex items-center gap-1"><Calendar size={12} /> {formatDate(order.created_at)} {formatTime(order.created_at)}</span>

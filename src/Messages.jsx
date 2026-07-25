@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import { Megaphone, Send, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import StoreInbox from './StoreInbox';
 
 export default function Messages() {
   const [targetType, setTargetType] = useState('store'); // 'store' or 'driver'
@@ -257,6 +258,11 @@ export default function Messages() {
           </button>
 
         </form>
+      </div>
+
+      {/* Εισερχόμενα από τα καταστήματα */}
+      <div className="mt-8">
+        <StoreInbox />
       </div>
     </motion.div>
   );

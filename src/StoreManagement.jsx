@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut } from 'lucide-react';
+import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion } from 'framer-motion';
@@ -13,6 +13,9 @@ export default function StoreManagement() {
   const [stores, setStores] = useState([]);
   const [editingStore, setEditingStore] = useState(null);
   const [newFee, setNewFee] = useState('');
+  // Συντεταγμένες καταστήματος — αφετηρία για τον υπολογισμό απόστασης.
+  const [newLat, setNewLat] = useState('');
+  const [newLng, setNewLng] = useState('');
   const [isAddingStore, setIsAddingStore] = useState(false);
   const [newStoreName, setNewStoreName] = useState('');
   const [newStorePhone, setNewStorePhone] = useState('');
@@ -48,14 +51,40 @@ export default function StoreManagement() {
     setLoading(false);
   };
 
-  const saveDeliveryFee = async (storeId) => {
-    const { error } = await supabase.from('stores').update({ delivery_fee: parseFloat(newFee) }).eq('id', storeId);
+  // Αποθηκεύει χρέωση ΚΑΙ συντεταγμένες του καταστήματος.
+  //
+  // Οι συντεταγμένες μπαίνουν αυτόματα (γεωκωδικοποίηση της διεύθυνσης από την
+  // εφαρμογή του καταστήματος), αλλά ΜΟΝΟ ο διαχειριστής μπορεί να τις διορθώσει
+  // — και η διόρθωσή του υπερισχύει, γιατί πάνω τους βασίζεται ο υπολογισμός
+  // απόστασης (όριο 15χλμ + επιπλέον χρέωση), άρα λεφτά.
+  const saveStoreEdits = async (storeId) => {
+    const payload = { delivery_fee: parseFloat(newFee) };
+
+    const lat = newLat.trim() === '' ? null : Number(newLat);
+    const lng = newLng.trim() === '' ? null : Number(newLng);
+
+    if ((lat !== null && !Number.isFinite(lat)) || (lng !== null && !Number.isFinite(lng))) {
+      toast.error('Οι συντεταγμένες πρέπει να είναι αριθμοί.');
+      return;
+    }
+    if ((lat === null) !== (lng === null)) {
+      toast.error('Συμπληρώστε ΚΑΙ τα δύο πεδία συντεταγμένων ή αφήστε τα κενά.');
+      return;
+    }
+    if (lat !== null && (lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
+      toast.error('Μη έγκυρες συντεταγμένες.');
+      return;
+    }
+    payload.latitude = lat;
+    payload.longitude = lng;
+
+    const { error } = await supabase.from('stores').update(payload).eq('id', storeId);
     if (error) {
       toast.error("Υπήρξε σφάλμα κατά την αποθήκευση.");
-    } else { 
-      toast.success("Η χρέωση ενημερώθηκε!");
-      setEditingStore(null); 
-      fetchStores(); 
+    } else {
+      toast.success("Το κατάστημα ενημερώθηκε!");
+      setEditingStore(null);
+      fetchStores();
     }
   };
 
@@ -308,7 +337,32 @@ export default function StoreManagement() {
                       </span>
                     </div>
                     <div className="col-span-2 hidden md:block text-adaptive-light">{store.phone}</div>
-                    <div className="col-span-3 hidden md:block text-adaptive text-sm truncate pr-2">{store.email}</div>
+                    <div className="col-span-3 hidden md:block text-adaptive text-sm pr-2">
+                      <div className="truncate">{store.email}</div>
+                      {/* Θέση καταστήματος: αφετηρία για απόσταση/χρέωση. Μπαίνει αυτόματα,
+                          τη διορθώνει ΜΟΝΟ ο διαχειριστής. */}
+                      {editingStore === store.id ? (
+                        <div className="flex gap-1 mt-1">
+                          <input
+                            type="number" step="0.000001" placeholder="Πλάτος (lat)"
+                            value={newLat} onChange={(e) => setNewLat(e.target.value)}
+                            className="p-1 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none text-xs"
+                          />
+                          <input
+                            type="number" step="0.000001" placeholder="Μήκος (lng)"
+                            value={newLng} onChange={(e) => setNewLng(e.target.value)}
+                            className="p-1 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none text-xs"
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-[11px] mt-0.5 flex items-center gap-1 opacity-80">
+                          <MapPin size={11} />
+                          {store.latitude != null && store.longitude != null
+                            ? `${Number(store.latitude).toFixed(5)}, ${Number(store.longitude).toFixed(5)}`
+                            : 'Χωρίς θέση — δεν υπολογίζεται απόσταση'}
+                        </div>
+                      )}
+                    </div>
                     <div className="col-span-2 flex items-center justify-between md:justify-start mt-2 md:mt-0 pt-3 md:pt-0 border-t border-[#C5A066]/10 md:border-0">
                       <span className="md:hidden font-semibold text-adaptive text-sm">Χρέωση:</span>
                       {editingStore === store.id ? (
@@ -322,12 +376,17 @@ export default function StoreManagement() {
                     <div className="col-span-2 flex justify-end mt-1 md:mt-0">
                       {editingStore === store.id ? (
                         <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
-                          <button onClick={() => saveDeliveryFee(store.id)} className="flex-1 md:flex-none btn-glass text-[#38EF7D] border border-[#38EF7D]/50 hover:shadow-[inset_0_0_10px_rgba(56,239,125,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><Check size={16}/></button>
+                          <button onClick={() => saveStoreEdits(store.id)} className="flex-1 md:flex-none btn-glass text-[#38EF7D] border border-[#38EF7D]/50 hover:shadow-[inset_0_0_10px_rgba(56,239,125,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><Check size={16}/></button>
                           <button onClick={() => setEditingStore(null)} className="flex-1 md:flex-none btn-glass text-[#9D4EDD] border border-[#9D4EDD]/50 hover:shadow-[inset_0_0_10px_rgba(157,78,221,0.4)] px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all flex justify-center items-center"><X size={16}/></button>
                         </div>
                       ) : (
                         <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
-                          <button onClick={() => { setEditingStore(store.id); setNewFee(store.delivery_fee || 0); }} className="flex-1 md:flex-none btn-glass hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] text-[#C5A066] border border-[#C5A066]/30 px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center gap-2">
+                          <button onClick={() => {
+                            setEditingStore(store.id);
+                            setNewFee(store.delivery_fee || 0);
+                            setNewLat(store.latitude ?? '');
+                            setNewLng(store.longitude ?? '');
+                          }} className="flex-1 md:flex-none btn-glass hover:shadow-[inset_0_0_10px_rgba(197,160,102,0.4)] text-[#C5A066] border border-[#C5A066]/30 px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center gap-2">
                             <Edit2 size={14} /> Επεξεργασία
                           </button>
                           <button onClick={() => toggleBlockedStatus(store.id, 'stores', store.is_blocked)} className={`flex-1 md:flex-none px-3 py-2 rounded-md cursor-pointer font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center border ${store.is_blocked ? 'btn-glass text-[#38EF7D] border-[#38EF7D]/50 hover:shadow-[inset_0_0_15px_rgba(56,239,125,0.4)]' : 'btn-glass text-[#EF4444] border-[#EF4444]/50 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.4)]'}`}>
