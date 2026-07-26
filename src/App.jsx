@@ -98,6 +98,13 @@ const SearchIcon = () => (
   </svg>
 );
 
+const MoreIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>
+  </svg>
+);
+
 const NAV_ITEMS = [
   { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
   { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
@@ -107,6 +114,11 @@ const NAV_ITEMS = [
   { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
   { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
 ];
+
+// ΚΙΝΗΤΟ: μόνο οι τρεις λειτουργίες της καθημερινής ροής μένουν στη μπάρα· τα
+// υπόλοιπα μαζεύονται πίσω από το κουμπί «Περισσότερα». Επτά εικονίδια σε μια
+// οθόνη τηλεφώνου γίνονταν οριζόντιο scroll και έμοιαζαν ακανόνιστα.
+const MOBILE_PRIMARY_IDS = ['map', 'create-order', 'messages'];
 
 // Ο χάρτης ('map') μένει εκτός αυτού του object — φορτώνεται ξεχωριστά και μόνιμα
 // mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
@@ -140,6 +152,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('map');
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const isDark = theme === 'dark';
 
@@ -271,70 +284,93 @@ export default function App() {
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        {/* ── MOBILE TOP BAR: όλα σε έναν οριζόντιο άξονα ── */}
-        <div
-          className="md:hidden flex items-center gap-1 px-2 py-1.5 border-b"
-          style={{ borderColor: 'var(--border-default)' }}
-        >
-          {/* Logo (refresh) */}
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-bold text-white text-base"
-            style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 2px 8px var(--accent-muted)' }}
-            title="Ανανέωση σελίδας"
+        {/* ── MOBILE TOP BAR: λογότυπο + 3 βασικές λειτουργίες + «Περισσότερα» ── */}
+        <div className="md:hidden relative">
+          <div
+            className="flex items-center gap-2 px-2 py-2 border-b"
+            style={{ borderColor: 'var(--border-default)' }}
           >
-            V
-          </button>
+            {/* Logo (refresh) — ίδιο ύψος με τα κουμπιά λειτουργιών */}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white text-lg"
+              style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 2px 8px var(--accent-muted)' }}
+              title="Ανανέωση σελίδας"
+            >
+              V
+            </button>
 
-          {/* Tabs (scrollable) */}
-          <nav className="flex-1 flex items-center gap-1 overflow-x-auto">
-            {NAV_ITEMS.map(({ id, Icon, shortLabel }) => (
+            <nav className="flex-1 flex items-stretch gap-1.5">
+              {NAV_ITEMS.filter(item => MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, shortLabel }) => (
+                <button
+                  key={id}
+                  onClick={() => { setActiveTab(id); setMoreOpen(false); }}
+                  className="relative flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200"
+                  style={getNavStyle(id)}
+                >
+                  <Icon />
+                  {id === 'messages' && <UnreadMessagesBadge />}
+                  <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
+                </button>
+              ))}
+
               <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className="relative flex flex-col items-center justify-center gap-0.5 py-1.5 px-2 rounded-lg transition-all duration-200 shrink-0 min-w-[58px]"
-                style={getNavStyle(id)}
+                onClick={() => setMoreOpen(v => !v)}
+                className="relative flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200"
+                style={moreOpen || !MOBILE_PRIMARY_IDS.includes(activeTab) ? getNavStyle(activeTab) : getNavStyle(null)}
               >
-                <Icon />
-                {id === 'messages' && <UnreadMessagesBadge />}
-                <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
+                <MoreIcon />
+                <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Περισσότερα</span>
               </button>
-            ))}
-          </nav>
+            </nav>
+          </div>
 
-          {/* Theme toggle */}
-          <button
-            onClick={toggleTheme}
-            className="shrink-0 p-2 rounded-lg"
-            style={{ color: 'var(--text-muted)' }}
-            title={isDark ? 'Light Mode' : 'Dark Mode'}
-          >
-            <div className="relative w-5 h-5">
+          {moreOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
               <div
-                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
-                style={{ opacity: isDark ? 1 : 0, transform: isDark ? 'rotate(0deg)' : 'rotate(-30deg) scale(0.8)' }}
+                className="absolute right-2 top-full mt-1 z-40 w-56 rounded-2xl overflow-hidden p-1.5"
+                style={{
+                  backgroundColor: 'var(--bg-sidebar)',
+                  border: '1px solid var(--border-default)',
+                  boxShadow: 'var(--shadow-xl)',
+                }}
               >
-                <SunIcon />
-              </div>
-              <div
-                className="absolute inset-0 flex items-center justify-center transition-all duration-300"
-                style={{ opacity: isDark ? 0 : 1, transform: isDark ? 'rotate(30deg) scale(0.8)' : 'rotate(0deg)' }}
-              >
-                <MoonIcon />
-              </div>
-            </div>
-          </button>
+                {NAV_ITEMS.filter(item => !MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, fullLabel, shortLabel }) => (
+                  <button
+                    key={id}
+                    onClick={() => { setActiveTab(id); setMoreOpen(false); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
+                    style={getNavStyle(id)}
+                  >
+                    <Icon />
+                    <span className="text-sm font-semibold">{fullLabel || shortLabel}</span>
+                  </button>
+                ))}
 
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="shrink-0 p-2 rounded-lg"
-            style={{ color: 'var(--danger)' }}
-            title="Αποσύνδεση"
-          >
-            <LogOutIcon />
-          </button>
+                <div className="h-px my-1.5" style={{ backgroundColor: 'var(--border-default)' }} />
+
+                <button
+                  onClick={() => { toggleTheme(); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {isDark ? <SunIcon /> : <MoonIcon />}
+                  <span className="text-sm font-semibold">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  <LogOutIcon />
+                  <span className="text-sm font-semibold">Αποσύνδεση</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Brand (desktop only) */}

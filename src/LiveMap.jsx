@@ -462,6 +462,21 @@ export default function LiveMap() {
     };
   }, []);
 
+  // Push στον διανομέα τη ΣΤΙΓΜΗ της ανάθεσης/μετάθεσης. Ο in-app συναγερμός
+  // χτυπά μόνο με ανοιχτή εφαρμογή — ο διανομέας όμως συνήθως οδηγεί με το
+  // κινητό κλειδωμένο, οπότε χρειάζεται FCM για να το ακούσει επιτόπου.
+  // Αστοχία εδώ ΔΕΝ ακυρώνει την ανάθεση: η ίδια η μετακίνηση έχει ήδη γίνει.
+  const notifyDriverOfAssignment = async (orderId, driverId, kind) => {
+    try {
+      const { error } = await supabase.functions.invoke('send-assignment-notification', {
+        body: { orderId, driverId, kind },
+      });
+      if (error) console.error('[assignment push]', error);
+    } catch (e) {
+      console.error('[assignment push]', e);
+    }
+  };
+
   const assignOrderToDriver = async (orderId, driverId) => {
     if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const { error } = await supabase
@@ -474,6 +489,7 @@ export default function LiveMap() {
     } else {
       toast.success("Η παραγγελία ανατέθηκε επιτυχώς!");
       setAssigningOrderId(null);
+      notifyDriverOfAssignment(orderId, driverId, 'assign');
     }
   };
 
@@ -483,9 +499,6 @@ export default function LiveMap() {
   // `.eq('status','accepted')` το επιβάλλει και στη ΒΑΣΗ, όχι μόνο στο UI, ώστε
   // να μη γλιστρήσει μετάθεση σε παραγγελία που μόλις ολοκληρώθηκε.
   //
-  // Ο ήχος στον νέο διανομέα δεν στέλνεται από εδώ: η ίδια η αλλαγή driver_id
-  // φτάνει στο κινητό του ως realtime event και η εφαρμογή του χτυπά τον
-  // επαναλαμβανόμενο συναγερμό ανάθεσης (βλ. final-app DriverDashboard).
   const reassignOrder = async (orderId, newDriverId, newDriverName) => {
     if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
 
@@ -514,6 +527,7 @@ export default function LiveMap() {
     }
     toast.success(`Η παραγγελία μετατέθηκε στον ${newDriverName}.`);
     setReassigningOrderId(null);
+    notifyDriverOfAssignment(orderId, newDriverId, 'reassign');
   };
 
   const cancelOrder = async (orderId) => {
@@ -634,7 +648,7 @@ export default function LiveMap() {
         >
           <Bike size={14} style={{ color: visibleDrivers.length > 0 ? 'var(--success)' : 'var(--text-muted)' }} />
           <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: visibleDrivers.length > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-            {visibleDrivers.length} σε βάρδια
+            {visibleDrivers.length}<span className="hidden md:inline"> σε βάρδια</span>
           </span>
         </div>
 
@@ -644,7 +658,7 @@ export default function LiveMap() {
         >
           <Check size={14} style={{ color: 'var(--accent)' }} />
           <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-            Ολοκληρωμένες: <b style={{ color: 'var(--text-primary)' }}>{ordersToday}</b>
+            <span className="hidden md:inline">Ολοκληρωμένες: </span><b style={{ color: 'var(--text-primary)' }}>{ordersToday}</b>
           </span>
         </div>
 
@@ -654,7 +668,7 @@ export default function LiveMap() {
         >
           <Timer size={14} style={{ color: 'var(--accent)' }} />
           <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-            Μ.Ο.: <b style={{ color: 'var(--text-primary)' }}>{avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}</b>
+            <span className="hidden md:inline">Μ.Ο.: </span><b style={{ color: 'var(--text-primary)' }}>{avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}</b>
           </span>
         </div>
 
@@ -668,7 +682,7 @@ export default function LiveMap() {
           }}
         >
           <Flame size={14} style={{ color: 'var(--accent)' }} />
-          <span className="text-[12px] font-bold whitespace-nowrap">Φόρτος</span>
+          <span className="hidden md:inline text-[12px] font-bold whitespace-nowrap">Φόρτος</span>
           {showWorkload ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
 
@@ -686,7 +700,7 @@ export default function LiveMap() {
             style={{ backgroundColor: onPrimary ? 'var(--success)' : 'var(--warning)' }}
           />
           <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: onPrimary ? 'var(--success)' : 'var(--warning)' }}>
-            Σύστημα: {onPrimary ? 'Primary' : 'Standby'}
+            <span className="hidden sm:inline">Σύστημα: </span>{onPrimary ? 'Primary' : 'Standby'}
           </span>
         </div>
       </div>
