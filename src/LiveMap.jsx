@@ -471,9 +471,13 @@ export default function LiveMap() {
       const { error } = await supabase.functions.invoke('send-assignment-notification', {
         body: { orderId, driverId, kind },
       });
-      if (error) console.error('[assignment push]', error);
+      if (error) {
+        console.error('[assignment push]', error);
+        toast.error('Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
+      }
     } catch (e) {
       console.error('[assignment push]', e);
+      toast.error('Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
     }
   };
 
@@ -508,6 +512,10 @@ export default function LiveMap() {
     );
     if (!isConfirmed) return;
 
+    // Ο διανομέας που ΤΗΝ ΕΧΕΙ ΤΩΡΑ, πριν το update τον αντικαταστήσει — χρειάζεται
+    // για να ειδοποιηθεί ότι τη χάνει (βλ. κλήση 'reassign_away' παρακάτω).
+    const previousDriverId = orders.find(o => o.id === orderId)?.driver_id || null;
+
     const { data, error } = await supabase
       .from('orders')
       .update({ driver_id: newDriverId, accepted_at: new Date().toISOString() })
@@ -528,6 +536,11 @@ export default function LiveMap() {
     toast.success(`Η παραγγελία μετατέθηκε στον ${newDriverName}.`);
     setReassigningOrderId(null);
     notifyDriverOfAssignment(orderId, newDriverId, 'reassign');
+    // Ο διανομέας που την ΕΧΑΝΕ πρέπει κι αυτός να ενημερωθεί με ήχο — αλλιώς θα
+    // την περιμένει άδικα νομίζοντας ότι είναι ακόμα δική του.
+    if (previousDriverId && previousDriverId !== newDriverId) {
+      notifyDriverOfAssignment(orderId, previousDriverId, 'reassign_away');
+    }
   };
 
   const cancelOrder = async (orderId) => {

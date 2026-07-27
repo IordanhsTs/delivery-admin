@@ -86,6 +86,21 @@ export default function Messages() {
       if (response === 'ok') {
         toast.success('Το μήνυμα εστάλη επιτυχώς!');
         setMessage('');
+
+        // Το broadcast φτάνει μόνο σε ανοιχτή/συνδεδεμένη εφαρμογή. Ο διανομέας
+        // συχνά οδηγεί με κλειδωμένο κινητό, οπότε στέλνουμε ΚΑΙ πραγματικό OS
+        // push (FCM) με ήχο — τα καταστήματα δεν το χρειάζονται, μένουν ανοιχτά
+        // σε συσκευή στο μαγαζί.
+        if (targetType === 'driver') {
+          try {
+            const { error: pushError } = await supabase.functions.invoke('send-message-notification', {
+              body: { targetIds: selectedTargets, message: payload.message },
+            });
+            if (pushError) console.error('[message push]', pushError);
+          } catch (e) {
+            console.error('[message push]', e);
+          }
+        }
       } else {
         toast.error(`Αποτυχία αποστολής (${response}). Ελέγξτε τη σύνδεσή σας.`);
       }
