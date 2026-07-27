@@ -138,16 +138,20 @@ export default function Messages() {
         </p>
       </div>
 
-      <div 
-        className="max-w-2xl backdrop-blur-md p-6 rounded-2xl border shadow-lg"
-        style={{ 
-          backgroundColor: 'var(--bg-card)', 
+      {/* Η καρτέλα εισερχομένων μπαίνει ΔΙΠΛΑ στη φόρμα (σε μεγάλες οθόνες), όχι από
+          κάτω — ο πελάτης δεν ήθελε να κάνει scroll για να δει τα μηνύματα καταστημάτων
+          ενώ γράφει ένα νέο μήνυμα. Σε στενή οθόνη πέφτουν η μία κάτω από την άλλη. */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+      <div
+        className="w-full lg:flex-1 max-w-2xl backdrop-blur-md p-6 rounded-2xl border shadow-lg"
+        style={{
+          backgroundColor: 'var(--bg-card)',
           borderColor: 'var(--border-subtle)',
           boxShadow: 'var(--shadow-md)'
         }}
       >
         <form onSubmit={handleSend} className="flex flex-col gap-5">
-          
+
           {/* 1. Επιλογή Παραλήπτη (Καταστήματα / Διανομείς) */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
@@ -276,8 +280,9 @@ export default function Messages() {
       </div>
 
       {/* Εισερχόμενα από τα καταστήματα */}
-      <div className="mt-8">
+      <div className="w-full lg:flex-1">
         <StoreInbox />
+      </div>
       </div>
     </motion.div>
   );

@@ -37,9 +37,11 @@ export default function StoreInbox() {
         )}
       </div>
 
+      {/* max-h + εσωτερικό scroll: έτσι η λίστα δεν μεγαλώνει απεριόριστα δίπλα στη
+          φόρμα — σκρολάρει μέσα στο δικό της κουτί, όχι όλη η σελίδα. */}
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-md)' }}
+        className="rounded-2xl overflow-y-auto"
+        style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-md)', maxHeight: '560px' }}
       >
         {loading ? (
           <div className="p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</div>
