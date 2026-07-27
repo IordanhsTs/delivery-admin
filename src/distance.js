@@ -36,9 +36,16 @@ export function formatCountdown(ms) {
  * Το Math.max(0, …) δεν είναι διακοσμητικό: το `created_at` γράφεται από τον
  * Postgres ενώ το `accepted_at` από το κινητό του διανομέα. Μια απόκλιση ρολογιού
  * λίγων δευτερολέπτων έδινε αρνητική διαφορά → «-1 λ.» στην οθόνη του διανομέα.
+ *
+ * `activated_at ?? created_at`: για μια ΚΑΘΥΣΤΕΡΗΜΕΝΗ παραγγελία το `created_at`
+ * είναι η στιγμή αποστολής από το κατάστημα, πολύ πριν γίνει 'pending' — χωρίς
+ * αυτό το fallback ο χρόνος «ενεργή» θα ξεκινούσε ήδη από τα λεπτά αναμονής αντί
+ * από το 0 τη στιγμή που απελευθερώνεται (release_due_orders() το γεμίζει τότε).
  */
 export function orderDurations(order, now = new Date()) {
-  const created = order.created_at ? new Date(order.created_at) : null;
+  const created = order.activated_at
+    ? new Date(order.activated_at)
+    : order.created_at ? new Date(order.created_at) : null;
   const accepted = order.accepted_at ? new Date(order.accepted_at) : null;
   const ended = order.completed_at ? new Date(order.completed_at) : null;
   if (!created) return { activeMins: 0, acceptedMins: 0, totalMins: 0 };
