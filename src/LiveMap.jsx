@@ -9,7 +9,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
 import { pushFailureReason } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -107,6 +107,18 @@ function MapCenterHandler({ center }) {
   return null;
 }
 
+// «Προβολή στο χάρτη»: κεντράρει τον χάρτη στον διανομέα που διάλεξε ο χρήστης.
+// Το `target` αλλάζει ταυτότητα σε κάθε κλικ (κρατά timestamp), ώστε να δουλεύει
+// και δεύτερο κλικ στον ίδιο διανομέα αφού ο χρήστης μετακινήσει τον χάρτη.
+function MapFocusHandler({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) return;
+    map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 16), { duration: 0.8 });
+  }, [map, target]);
+  return null;
+}
+
 // ── Chip απόστασης (+ επιπλέον χρέωση καταστήματος όταν υπάρχει) ────────────
 function DistanceChip({ order }) {
   if (order.distance_km === null || order.distance_km === undefined) return null;
@@ -160,25 +172,55 @@ function StatTile({ Icon, value, label, tint, bg, border, title }) {
 }
 
 // ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
+// Ξεχωριστή κάρτα ανά ενότητα, με κουμπί σύμπτυξης: με 8 διανομείς σε βάρδια η
+// στήλη γίνεται πολύ μακριά, οπότε ο διαχειριστής μαζεύει ό,τι δεν κοιτά.
 function RailSection({ Icon, title, count, tint, children }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className="px-3 pt-3 pb-2 border-b last:border-b-0" style={{ borderColor: 'var(--border-subtle)' }}>
-      <div className="flex items-center gap-1.5 mb-2">
-        <Icon size={13} style={{ color: tint }} />
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+    <section
+      className="rounded-xl overflow-hidden"
+      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xs)' }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-1.5 px-3 py-2.5 text-left"
+        title={open ? 'Σύμπτυξη' : 'Ανάπτυξη'}
+      >
+        <Icon size={14} style={{ color: tint }} />
+        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
           {title}
         </span>
         {typeof count === 'number' && (
           <span
-            className="text-[11px] font-bold px-1.5 rounded-full"
-            style={{ backgroundColor: 'var(--bg-tertiary)', color: tint }}
+            className="text-[11px] font-bold px-1.5 rounded-full tabular-nums"
+            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
           >
             {count}
           </span>
         )}
-      </div>
+        <ChevronDown
+          size={16}
+          className="ml-auto shrink-0"
+          style={{
+            color: 'var(--text-muted)',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 200ms',
+          }}
+        />
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
+    </section>
+  );
+}
+
+// ── Κενή κατάσταση ενότητας ─────────────────────────────────────────────────
+function RailEmpty({ Icon, children }) {
+  return (
+    <p className="flex items-center justify-center gap-1.5 text-center text-[12px] py-2 m-0" style={{ color: 'var(--text-muted)' }}>
+      {Icon && <Icon size={14} style={{ color: 'var(--success)' }} />}
       {children}
-    </div>
+    </p>
   );
 }
 
@@ -196,6 +238,11 @@ export default function LiveMap() {
   // Ποιες παραγγελίες ήταν 'scheduled' πριν το τελευταίο realtime event.
   const scheduledIdsRef = useRef(new Set());
   const [lastCompletedTimes, setLastCompletedTimes] = useState({});
+  // Πόσες παραδόσεις έκλεισε σήμερα ο καθένας — { [driverId]: πλήθος }.
+  const [deliveriesToday, setDeliveriesToday] = useState({});
+  // Ο διανομέας που ζήτησε ο χρήστης να δει στον χάρτη ({ lat, lng, ts }).
+  const [focusTarget, setFocusTarget] = useState(null);
+  const mapWrapRef = useRef(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   // Πότε μπήκαν τελευταία φορά ΔΕΔΟΜΕΝΑ (όχι απλώς τικ ρολογιού) — το δείχνει η
   // ένδειξη «Live» κάτω από τον χάρτη, ώστε να φαίνεται ότι το realtime ζει.
@@ -280,15 +327,18 @@ export default function LiveMap() {
 
     if (data) {
       const times = {};
+      const counts = {};
       data.forEach(order => {
         if (order.driver_id && order.completed_at) {
           const t = new Date(order.completed_at).getTime();
           if (!times[order.driver_id] || t > times[order.driver_id]) {
             times[order.driver_id] = t;
           }
+          counts[order.driver_id] = (counts[order.driver_id] || 0) + 1;
         }
       });
       setLastCompletedTimes(times);
+      setDeliveriesToday(counts);
     }
   };
 
@@ -721,10 +771,11 @@ export default function LiveMap() {
       <div className="flex flex-col md:flex-row md:flex-1 min-h-0">
 
         {/* ── Χάρτης (full-bleed) ── */}
-        <div className="relative h-[48vh] md:h-auto md:flex-1 min-w-0 z-0">
+        <div ref={mapWrapRef} className="relative h-[48vh] md:h-auto md:flex-1 min-w-0 z-0">
           <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: 'var(--bg-primary)' }}>
             <MapResizeHandler />
             <MapCenterHandler center={centerPosition} />
+            <MapFocusHandler target={focusTarget} />
             <TileLayer
               attribution='&copy; <a href="https://carto.com/">Carto</a>'
               url={currentTile}
@@ -855,8 +906,8 @@ export default function LiveMap() {
 
         {/* ── Δεξιά στήλη: μόνιμο πάνελ εργασίας ── */}
         <aside
-          className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto"
-          style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-default)' }}
+          className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-3 space-y-3"
+          style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}
         >
           {/* Προγραμματισμένες (καθυστερημένη αποστολή από το κατάστημα) */}
           {scheduledOrders.length > 0 && (
@@ -913,11 +964,9 @@ export default function LiveMap() {
           )}
 
           {/* Εκκρεμείς */}
-          <RailSection Icon={Clock} title="Εκκρεμείς" count={pendingOrders.length} tint="var(--accent)">
+          <RailSection Icon={Package} title="Εκκρεμείς" count={pendingOrders.length} tint="var(--accent)">
             {pendingOrders.length === 0 ? (
-              <p className="text-[12px] italic py-1.5" style={{ color: 'var(--text-muted)' }}>
-                Καμία εκκρεμής — όλα καθαρά.
-              </p>
+              <RailEmpty Icon={CheckCircle2}>Καμία εκκρεμής — όλα καθαρά</RailEmpty>
             ) : (
               <AnimatePresence>
                 {pendingOrders.map((order, idx) => {
@@ -1038,9 +1087,7 @@ export default function LiveMap() {
           {/* Ενεργές */}
           <RailSection Icon={Bike} title="Ενεργές" count={acceptedOrders.length} tint="var(--success)">
             {acceptedOrders.length === 0 ? (
-              <p className="text-[12px] italic py-1.5" style={{ color: 'var(--text-muted)' }}>
-                Καμία ενεργή διανομή αυτή τη στιγμή.
-              </p>
+              <RailEmpty>Καμία ενεργή διανομή αυτή τη στιγμή</RailEmpty>
             ) : (
               <AnimatePresence>
                 {acceptedOrders.map((order, idx) => {
@@ -1178,60 +1225,104 @@ export default function LiveMap() {
           </RailSection>
 
           {/* Διανομείς */}
-          <RailSection Icon={Activity} title="Διανομείς" count={visibleDrivers.length} tint="var(--text-secondary)">
+          <RailSection Icon={Users} title="Διανομείς" count={visibleDrivers.length} tint="var(--text-secondary)">
             {visibleDrivers.length === 0 ? (
-              <p className="text-[12px] italic py-1.5" style={{ color: 'var(--text-muted)' }}>
-                Κανένας διανομέας συνδεδεμένος.
-              </p>
+              <RailEmpty>Κανένας διανομέας συνδεδεμένος</RailEmpty>
             ) : (
-              visibleDrivers.map(driver => {
-                const ageMin = signalAgeMin(driver);
-                const noSignal = ageMin > SIGNAL_FRESH_MIN;
-                const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
-                const battery = batteryVisual(driver.battery_level);
+              <div className="space-y-2">
+                {visibleDrivers.map(driver => {
+                  const ageMin = signalAgeMin(driver);
+                  const noSignal = ageMin > SIGNAL_FRESH_MIN;
+                  const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
+                  const battery = batteryVisual(driver.battery_level);
 
-                let dotColor = 'var(--accent)';
-                let subText = 'Διαθέσιμος';
-                let subColor = 'var(--text-muted)';
+                  // Ίδιος χρωματικός κώδικας με τους δείκτες του χάρτη: χρυσό =
+                  // ελεύθερος, πράσινο = σε διανομή, γκρι = χωρίς σήμα.
+                  let dotColor = 'var(--accent)';
+                  let subText = 'Ελεύθερος';
+                  let subColor = 'var(--text-secondary)';
 
-                if (noSignal) {
-                  dotColor = 'var(--map-offline)';
-                  subText = `Χωρίς σήμα: ${Math.floor(ageMin)} λ.`;
-                  subColor = 'var(--text-muted)';
-                } else if (activeCount > 0) {
-                  dotColor = 'var(--success)';
-                  subText = `Σε διανομή (${activeCount})`;
-                  subColor = 'var(--success)';
-                } else {
-                  const lastTime = lastCompletedTimes[driver.id];
-                  if (lastTime) {
-                    const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
-                    subText = `Ελεύθερος: ${diffMins} λ.`;
-                    subColor = diffMins > 10 ? 'var(--danger)' : 'var(--text-muted)';
+                  if (noSignal) {
+                    dotColor = 'var(--map-offline)';
+                    subText = `Χωρίς σήμα: ${Math.floor(ageMin)} λ.`;
+                    subColor = 'var(--text-muted)';
+                  } else if (activeCount > 0) {
+                    dotColor = 'var(--success)';
+                    subText = `Σε διανομή (${activeCount})`;
+                    subColor = 'var(--success)';
+                  } else {
+                    const lastTime = lastCompletedTimes[driver.id];
+                    if (lastTime) {
+                      const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
+                      subText = `Ελεύθερος: ${diffMins} λ.`;
+                      subColor = diffMins > 10 ? 'var(--danger)' : 'var(--text-secondary)';
+                    }
                   }
-                }
 
-                return (
-                  <div
-                    key={driver.id}
-                    className="flex items-center gap-2 py-1.5 border-b last:border-b-0"
-                    style={{ borderColor: 'var(--border-subtle)' }}
-                  >
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold leading-tight truncate m-0" style={{ color: 'var(--text-primary)' }}>
-                        {driver.full_name}
-                      </p>
-                      <p className="text-[11px] leading-tight m-0 mt-0.5" style={{ color: subColor }}>{subText}</p>
+                  const signalText = ageMin < 1 ? 'μόλις τώρα' : `πριν ${Math.floor(ageMin)} λ.`;
+
+                  return (
+                    <div
+                      key={driver.id}
+                      className="rounded-xl p-2.5"
+                      style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
+                          style={{ backgroundColor: 'var(--bg-tertiary)', border: `1px solid ${dotColor}` }}
+                        >
+                          <Bike size={18} style={{ color: dotColor }} />
+                        </span>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[13px] font-bold leading-tight truncate m-0 flex-1" style={{ color: 'var(--text-primary)' }}>
+                              {driver.full_name}
+                            </p>
+                            {battery && (
+                              <span className="flex items-center gap-1 text-[11px] font-bold shrink-0" style={{ color: battery.color }}>
+                                {driver.battery_level}% <battery.Icon size={13} />
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[12px] leading-tight m-0 mt-1 flex items-center gap-1.5" style={{ color: subColor }}>
+                            <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ backgroundColor: dotColor }} />
+                            {subText}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[10px] leading-none m-0" style={{ color: 'var(--text-muted)' }}>Σήμα</p>
+                          <p className="text-[12px] font-semibold leading-tight m-0 mt-1 truncate" style={{ color: 'var(--text-primary)' }}>
+                            {signalText}
+                          </p>
+                        </div>
+                        <div className="min-w-0 pl-3 border-l" style={{ borderColor: 'var(--border-subtle)' }}>
+                          <p className="text-[10px] leading-none m-0" style={{ color: 'var(--text-muted)' }}>Παραδόσεις σήμερα</p>
+                          <p className="text-[12px] font-semibold leading-tight m-0 mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                            {deliveriesToday[driver.id] || 0}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFocusTarget({ lat: driver.latitude, lng: driver.longitude, ts: Date.now() });
+                          mapWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }}
+                        className="hover-row-glass w-full mt-2.5 py-2 rounded-lg flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors"
+                        style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
+                      >
+                        <Crosshair size={13} /> Προβολή στον χάρτη
+                      </button>
                     </div>
-                    {battery && (
-                      <span className="flex items-center gap-1 text-[11px] font-bold shrink-0" style={{ color: battery.color }}>
-                        <battery.Icon size={13} /> {driver.battery_level}%
-                      </span>
-                    )}
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </RailSection>
         </aside>
