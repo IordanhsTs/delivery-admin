@@ -6,10 +6,10 @@ import L from 'leaflet';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supabaseClient';
+import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
 import { pushFailureReason } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -138,6 +138,27 @@ function OrderNumber({ n }) {
   );
 }
 
+// ── Πλακίδιο της σύνοψης ημέρας (κάτω από τον χάρτη) ────────────────────────
+// ΧΩΡΙΣ σύγκριση με χθες (απόφαση πελάτη): δείχνουμε μόνο την τρέχουσα τιμή —
+// το «+1 από χθες» δεν οδηγεί σε καμία ενέργεια μέσα στη βάρδια.
+function StatTile({ Icon, value, label, tint, bg, border, title }) {
+  return (
+    <div
+      className="flex-1 basis-[130px] min-w-0 rounded-xl px-3 py-2.5"
+      style={{ backgroundColor: bg, border: `1px solid ${border}` }}
+      title={title}
+    >
+      <Icon size={15} style={{ color: tint }} />
+      <p className="text-[20px] font-black leading-none mt-1.5 mb-1 tabular-nums truncate" style={{ color: tint }}>
+        {value}
+      </p>
+      <p className="text-[11px] leading-tight m-0 truncate" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
 // ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
 function RailSection({ Icon, title, count, tint, children }) {
   return (
@@ -176,8 +197,9 @@ export default function LiveMap() {
   const scheduledIdsRef = useRef(new Set());
   const [lastCompletedTimes, setLastCompletedTimes] = useState({});
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  const [showWorkload, setShowWorkload] = useState(false);
+  // Πότε μπήκαν τελευταία φορά ΔΕΔΟΜΕΝΑ (όχι απλώς τικ ρολογιού) — το δείχνει η
+  // ένδειξη «Live» κάτω από τον χάρτη, ώστε να φαίνεται ότι το realtime ζει.
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
   // ── Στατιστικά φόρτου / χρόνου ──
   const [workloadMatrix, setWorkloadMatrix] = useState(null); // { [jsDay]: { [hour]: avg } }
@@ -227,6 +249,7 @@ export default function LiveMap() {
       .order('created_at', { ascending: false });
     if (data) {
       setOrders(data);
+      setLastUpdate(new Date());
       // Ποιες είναι αυτή τη στιγμή προγραμματισμένες — το χρειάζεται ο realtime
       // handler για να καταλάβει τη μετάβαση 'scheduled' → 'pending'.
       scheduledIdsRef.current = new Set(data.filter(o => o.status === 'scheduled').map(o => o.id));
@@ -380,6 +403,7 @@ export default function LiveMap() {
     const driversChannel = supabase
       .channel('public:drivers_map_tracking')
       .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
+        setLastUpdate(new Date());
         if (payload.eventType === 'DELETE') {
           setDrivers(prev => prev.filter(d => d.id !== payload.old.id));
           return;
@@ -631,8 +655,27 @@ export default function LiveMap() {
   // Διανομείς που μετράνε ως «σε βάρδια» (ό,τι δείχνει και ο χάρτης).
   const visibleDrivers = drivers.filter(d => signalAgeMin(d) <= SIGNAL_OFFLINE_MIN);
 
-  const backend = getActiveBackend();
-  const onPrimary = backend?.name !== 'standby';
+  // ── Σύνοψη ημέρας: η παλαιότερη εκκρεμής (πόση ώρα περιμένει κανείς τώρα) ──
+  // Ο μοναδικός αριθμός που λέει «κάτι κολλάει αυτή τη στιγμή» χωρίς να διαβάσεις
+  // όλη τη δεξιά στήλη — γίνεται κόκκινος στα 5′, όσο και το isLate των καρτών.
+  const oldestPendingMs = pendingOrders.reduce((oldest, o) => {
+    const t = new Date(o.created_at).getTime();
+    return t < oldest ? t : oldest;
+  }, Infinity);
+  const oldestPendingMins = Number.isFinite(oldestPendingMs)
+    ? Math.floor((currentTime.getTime() - oldestPendingMs) / 60000)
+    : null;
+
+  // ── Σύνοψη ημέρας: ώρα αιχμής της σημερινής ημέρας εβδομάδας ──
+  // Βγαίνει από το ΙΔΙΟ matrix του heatmap (καμία επιπλέον κλήση στη βάση).
+  let peakHour = null;
+  let peakValue = 0;
+  const todayCurve = workloadMatrix?.[currentTime.getDay()];
+  if (todayCurve) {
+    for (let h = 0; h < 24; h++) {
+      if ((todayCurve[h] || 0) > peakValue) { peakValue = todayCurve[h]; peakHour = h; }
+    }
+  }
 
   const railCardStyle = (tint) => ({
     backgroundColor: 'var(--bg-card)',
@@ -669,93 +712,10 @@ export default function LiveMap() {
         `}
       </style>
 
-      {/* ════════ ΓΡΑΜΜΗ KPI (εκτός χάρτη) ════════ */}
-      <div
-        className="flex items-center flex-wrap gap-2 px-3 md:px-4 py-2 border-b shrink-0"
-        style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-default)' }}
-      >
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
-          style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
-        >
-          <Bike size={14} style={{ color: visibleDrivers.length > 0 ? 'var(--success)' : 'var(--text-muted)' }} />
-          <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: visibleDrivers.length > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-            {visibleDrivers.length}<span className="hidden md:inline"> σε βάρδια</span>
-          </span>
-        </div>
-
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
-          style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
-        >
-          <Check size={14} style={{ color: 'var(--accent)' }} />
-          <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-            <span className="hidden md:inline">Ολοκληρωμένες: </span><b style={{ color: 'var(--text-primary)' }}>{ordersToday}</b>
-          </span>
-        </div>
-
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
-          style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
-        >
-          <Timer size={14} style={{ color: 'var(--accent)' }} />
-          <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-            <span className="hidden md:inline">Μ.Ο.: </span><b style={{ color: 'var(--text-primary)' }}>{avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}</b>
-          </span>
-        </div>
-
-        <button
-          onClick={() => setShowWorkload(v => !v)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all"
-          style={{
-            backgroundColor: showWorkload ? 'var(--accent-muted)' : 'var(--bg-tertiary)',
-            border: `1px solid ${showWorkload ? 'var(--accent)' : 'var(--border-subtle)'}`,
-            color: showWorkload ? 'var(--accent)' : 'var(--text-secondary)',
-          }}
-        >
-          <Flame size={14} style={{ color: 'var(--accent)' }} />
-          <span className="hidden md:inline text-[12px] font-bold whitespace-nowrap">Φόρτος</span>
-          {showWorkload ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-
-        {/* Κατάσταση συστήματος — σε ποιο backend τρέχουμε */}
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ml-auto"
-          title={onPrimary ? 'Το σύστημα τρέχει στο κύριο datacenter.' : 'Το σύστημα τρέχει στο εφεδρικό datacenter (failover).'}
-          style={{
-            backgroundColor: onPrimary ? 'var(--success-bg)' : 'var(--warning-bg)',
-            border: `1px solid ${onPrimary ? 'var(--success-border)' : 'var(--warning-border)'}`,
-          }}
-        >
-          <span
-            className="w-2 h-2 rounded-full inline-block"
-            style={{ backgroundColor: onPrimary ? 'var(--success)' : 'var(--warning)' }}
-          />
-          <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: onPrimary ? 'var(--success)' : 'var(--warning)' }}>
-            <span className="hidden sm:inline">Σύστημα: </span>{onPrimary ? 'Primary' : 'Standby'}
-          </span>
-        </div>
-      </div>
-
-      {/* ════════ ΠΑΝΕΛ ΦΟΡΤΟΥ (αναδιπλούμενο κάτω από τη γραμμή KPI) ════════ */}
-      <AnimatePresence>
-        {showWorkload && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="overflow-hidden border-b shrink-0"
-            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
-          >
-            <WorkloadChart
-              matrix={workloadMatrix}
-              loading={loadingWorkload}
-              isDark={isDark}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ΓΡΑΜΜΗ KPI ΠΑΝΩ ΑΠΟ ΤΟΝ ΧΑΡΤΗ: καταργήθηκε (απόφαση πελάτη). Οι ίδιοι
+          αριθμοί ζουν πλέον στη «Σήμερα με μια ματιά» κάτω από τον χάρτη, ο
+          φόρτος στην κάτω δεξιά κάρτα, και η κατάσταση συστήματος φαίνεται
+          μόνο όταν έχει σημασία — ως ReadOnlyBanner σε failover. */}
 
       {/* ════════ ΣΩΜΑ: ΧΑΡΤΗΣ + ΔΕΞΙΑ ΣΤΗΛΗ ════════ */}
       <div className="flex flex-col md:flex-row md:flex-1 min-h-0">
@@ -1276,6 +1236,93 @@ export default function LiveMap() {
           </RailSection>
         </aside>
       </div>
+
+      {/* ════════ ΚΑΤΩ ΓΡΑΜΜΗ: ΣΥΝΟΨΗ ΗΜΕΡΑΣ + ΦΟΡΤΟΣ ════════ */}
+      {/* Ίδιο πλάτος στηλών με τον χάρτη/δεξιά στήλη από πάνω, ώστε τα πλακίδια
+          να κάθονται κάτω από τον χάρτη και ο φόρτος κάτω από τη λίστα. */}
+      <div
+        className="flex flex-col md:flex-row shrink-0 border-t"
+        style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-secondary)' }}
+      >
+        {/* ── Σήμερα με μια ματιά ── */}
+        <div className="flex-1 min-w-0 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Σήμερα με μια ματιά
+            </span>
+            <span className="text-[10px] flex items-center gap-1.5 shrink-0" style={{ color: 'var(--text-muted)' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: 'var(--success)' }} />
+              Live · {lastUpdate.toLocaleTimeString('el-GR', { hour12: false })}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <StatTile
+              Icon={Check}
+              value={ordersToday}
+              label="Ολοκληρωμένες"
+              tint="var(--success)"
+              bg="var(--success-bg)"
+              border="var(--success-border)"
+              title="Παραγγελίες που ολοκληρώθηκαν σήμερα"
+            />
+
+            <StatTile
+              Icon={Timer}
+              value={avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
+              label="Μ.Ο. χρόνος"
+              tint="var(--info)"
+              bg="var(--info-bg)"
+              border="var(--info-border)"
+              title="Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες"
+            />
+
+            <StatTile
+              Icon={Bike}
+              value={visibleDrivers.length}
+              label="Διανομείς σε βάρδια"
+              tint={visibleDrivers.length > 0 ? 'var(--accent)' : 'var(--text-muted)'}
+              bg={visibleDrivers.length > 0 ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}
+              border="var(--border-subtle)"
+              title="Διανομείς με σήμα τα τελευταία 20 λεπτά — όσοι φαίνονται και στον χάρτη"
+            />
+
+            <StatTile
+              Icon={Hourglass}
+              value={oldestPendingMins !== null ? `${oldestPendingMins} λ.` : '—'}
+              label="Μεγαλύτερη αναμονή"
+              tint={oldestPendingMins === null ? 'var(--text-muted)' : (oldestPendingMins >= 5 ? 'var(--danger)' : 'var(--warning)')}
+              bg={oldestPendingMins === null ? 'var(--bg-tertiary)' : (oldestPendingMins >= 5 ? 'var(--danger-bg)' : 'var(--warning-bg)')}
+              border={oldestPendingMins === null ? 'var(--border-subtle)' : (oldestPendingMins >= 5 ? 'var(--danger-border)' : 'var(--warning-border)')}
+              title="Πόση ώρα περιμένει η παλαιότερη αδιάθετη παραγγελία αυτή τη στιγμή"
+            />
+
+            <StatTile
+              Icon={TrendingUp}
+              value={peakHour !== null ? `${String(peakHour).padStart(2, '0')}:00` : '—'}
+              label="Ώρα αιχμής"
+              tint="var(--purple)"
+              bg="var(--purple-bg)"
+              border="var(--purple-border)"
+              title={peakHour !== null
+                ? `Ιστορικά η πιο φορτωμένη ώρα για σήμερα — μ.ό. ${peakValue >= 10 ? Math.round(peakValue) : peakValue.toFixed(1)} παραγγελίες`
+                : 'Δεν υπάρχουν ακόμη αρκετά δεδομένα'}
+            />
+          </div>
+        </div>
+
+        {/* ── Φόρτος (στη θέση των παλιών «Γρήγορων ενεργειών») ── */}
+        <div
+          className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l"
+          style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-sidebar)' }}
+        >
+          <WorkloadChart
+            matrix={workloadMatrix}
+            loading={loadingWorkload}
+            isDark={isDark}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1284,6 +1331,9 @@ export default function LiveMap() {
 const START_HOUR = 7;  // πρωί
 const END_HOUR = 23;   // η μπάρα 23:00 καλύπτει 23:00–00:00 (μεσάνυχτα)
 
+// Ζει στην κάρτα κάτω δεξιά (πλάτος 340px), οπότε είναι σφιχτό: χαμηλές μπάρες,
+// ώρες ανά 2 και καμία τιμή πάνω από τις μπάρες — 17 νούμερα δεν χωρούν. Οι
+// ακριβείς τιμές μένουν διαθέσιμες στο tooltip κάθε μπάρας.
 function WorkloadChart({ matrix, loading, isDark }) {
   const todayDow = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayDow);
@@ -1298,15 +1348,16 @@ function WorkloadChart({ matrix, loading, isDark }) {
   const fmt = (v) => (v >= 10 ? Math.round(v).toString() : v.toFixed(1));
 
   return (
-    <div className="p-3" style={{ width: 'min(82vw, 600px)' }}>
+    <div className="p-3">
       {/* Επιλογή ημέρας */}
       <div className="flex items-center justify-between mb-2.5">
-        <h4 className="text-[12px] font-bold flex items-center gap-1.5" style={{ color: 'var(--map-gold)' }}>
-          <Activity size={14} /> Φόρτος ανά Ώρα
+        <h4
+          className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5"
+          style={{ color: 'var(--text-muted)' }}
+          title="Εκπαιδεύεται αυτόματα με τα δεδομένα των παραγγελιών — όσο περνάει ο καιρός γίνεται πιο ακριβές."
+        >
+          <Flame size={13} style={{ color: 'var(--accent)' }} /> Φόρτος ανά ώρα
         </h4>
-        <span className="text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-          εκπαιδεύεται με τα δεδομένα
-        </span>
       </div>
 
       <div className="flex gap-1 mb-3">
@@ -1333,7 +1384,7 @@ function WorkloadChart({ matrix, loading, isDark }) {
 
       {/* Τίτλος ημέρας */}
       <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-[15px] font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+        <span className="text-[13px] font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
           {DOW_FULL[selectedDay]}
         </span>
         {selectedDay === todayDow && (
@@ -1344,15 +1395,15 @@ function WorkloadChart({ matrix, loading, isDark }) {
       </div>
 
       {loading ? (
-        <div className="py-10 text-center text-[12px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+        <div className="py-6 text-center text-[12px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
           Φόρτωση δεδομένων…
         </div>
       ) : !matrix || dayMax === 0 ? (
-        <div className="py-10 text-center text-[12px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+        <div className="py-6 text-center text-[12px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
           Δεν υπάρχουν ακόμη αρκετά δεδομένα για {DOW_FULL[selectedDay]}.
         </div>
       ) : (
-        <div className="flex items-end justify-between gap-[3px]" style={{ height: 150 }}>
+        <div className="flex items-end justify-between gap-[3px]" style={{ height: 96 }}>
           {hours.map(h => {
             const val = dayData[h] || 0;
             const pct = dayMax > 0 ? (val / dayMax) * 100 : 0;
@@ -1363,13 +1414,6 @@ function WorkloadChart({ matrix, loading, isDark }) {
                 className="flex-1 flex flex-col items-center justify-end h-full group"
                 title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmt(val)} παραγγελίες`}
               >
-                {/* Τιμή πάνω από τη μπάρα */}
-                <span
-                  className="text-[8px] font-bold mb-0.5 transition-opacity"
-                  style={{ color: isNow ? 'var(--map-green)' : (isDark ? '#cbd5e1' : '#475569'), opacity: val > 0 ? 1 : 0.3 }}
-                >
-                  {val > 0 ? fmt(val) : ''}
-                </span>
                 {/* Μπάρα */}
                 <div
                   className="w-full rounded-t-[3px] transition-all duration-300"
@@ -1382,12 +1426,15 @@ function WorkloadChart({ matrix, loading, isDark }) {
                     boxShadow: isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
                   }}
                 />
-                {/* Ώρα */}
+                {/* Ώρα ανά 2 (μονές, ώστε να φαίνονται και οι δύο άκρες 7/23) — 17
+                    ετικέτες δεν χωράνε σε 340px. Οι κρυφές παίρνουν NBSP και όχι
+                    κενό: άδειο span έχει ύψος 0 και θα κατέβαζε τη μπάρα του
+                    χαμηλότερα από τις διπλανές. */}
                 <span
                   className="text-[8px] mt-1"
                   style={{ color: isNow ? 'var(--map-green)' : (isDark ? '#64748b' : '#94a3b8'), fontWeight: isNow ? 700 : 400 }}
                 >
-                  {h}
+                  {h % 2 !== START_HOUR % 2 && !isNow ? ' ' : h}
                 </span>
               </div>
             );
