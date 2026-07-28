@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { pushFailureReason } from './pushErrors';
 import { Megaphone, Send, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -93,12 +94,23 @@ export default function Messages() {
         // σε συσκευή στο μαγαζί.
         if (targetType === 'driver') {
           try {
-            const { error: pushError } = await supabase.functions.invoke('send-message-notification', {
+            const { data, error: pushError } = await supabase.functions.invoke('send-message-notification', {
               body: { targetIds: selectedTargets, message: payload.message },
             });
-            if (pushError) console.error('[message push]', pushError);
+            // Η αποτυχία εδώ ήταν ΕΝΤΕΛΩΣ σιωπηλή (μόνο console.error): το πράσινο
+            // «εστάλη επιτυχώς» αφορά το broadcast, που δουλεύει μόνο με ανοιχτή
+            // εφαρμογή. Αν έπεφτε το push, ο διαχειριστής νόμιζε ότι ειδοποίησε
+            // διανομείς με κλειδωμένο κινητό ενώ δεν είχε φτάσει τίποτα.
+            if (pushError) {
+              const reason = await pushFailureReason(pushError);
+              console.error('[message push]', pushError, reason);
+              toast.error(`Το μήνυμα δεν έφτασε ως ειδοποίηση στα κινητά. ${reason}`);
+            } else if (data?.skipped || data?.sent === 0) {
+              toast.warning('Κανένας από τους επιλεγμένους διανομείς δεν έχει ενεργές ειδοποιήσεις — θα το δουν μόνο αν ανοίξουν την εφαρμογή.');
+            }
           } catch (e) {
             console.error('[message push]', e);
+            toast.error('Το μήνυμα δεν έφτασε ως ειδοποίηση στα κινητά — δεν υπήρξε απάντηση από τον διακομιστή.');
           }
         }
       } else {

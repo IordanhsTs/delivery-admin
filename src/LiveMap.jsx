@@ -7,6 +7,7 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { supabase, getActiveBackend, getTenantSchema, isReadOnly } from './supabaseClient';
+import { pushFailureReason } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, User, Activity, ChevronUp, ChevronDown, Timer, Flame, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package } from 'lucide-react';
 import { toast } from 'sonner';
@@ -472,13 +473,9 @@ export default function LiveMap() {
         body: { orderId, driverId, kind },
       });
       if (error) {
-        // Το functions.invoke δίνει σκέτο «non-2xx» — ο πραγματικός λόγος είναι στο
-        // ΣΩΜΑ της απάντησης (error.context). Χωρίς αυτό κάθε αποτυχία έμοιαζε ίδια
-        // και ο διαχειριστής δεν είχε τρόπο να καταλάβει τι να διορθώσει.
-        let reason = '';
-        try { reason = (await error.context?.json?.())?.reason || ''; } catch (_) {}
+        const reason = await pushFailureReason(error);
         console.error('[assignment push]', error, reason);
-        toast.error(reason || 'Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
+        toast.error(`Η ειδοποίηση στον διανομέα απέτυχε. ${reason}`);
         return;
       }
       // Διανομέας χωρίς fcm_token: η function απαντά 200 με `skipped`, οπότε χωρίς
@@ -490,7 +487,7 @@ export default function LiveMap() {
       }
     } catch (e) {
       console.error('[assignment push]', e);
-      toast.error('Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
+      toast.error('Η ειδοποίηση στον διανομέα απέτυχε — δεν υπήρξε απάντηση από τον διακομιστή.');
     }
   };
 
