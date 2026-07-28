@@ -468,12 +468,20 @@ export default function LiveMap() {
   // Αστοχία εδώ ΔΕΝ ακυρώνει την ανάθεση: η ίδια η μετακίνηση έχει ήδη γίνει.
   const notifyDriverOfAssignment = async (orderId, driverId, kind) => {
     try {
-      const { error } = await supabase.functions.invoke('send-assignment-notification', {
+      const { data, error } = await supabase.functions.invoke('send-assignment-notification', {
         body: { orderId, driverId, kind },
       });
       if (error) {
         console.error('[assignment push]', error);
         toast.error('Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
+        return;
+      }
+      // Διανομέας χωρίς fcm_token: η function απαντά 200 με `skipped`, οπότε χωρίς
+      // αυτόν τον έλεγχο η αποτυχία ήταν ΕΝΤΕΛΩΣ αθόρυβη — ο διαχειριστής νόμιζε
+      // ότι ειδοποιήθηκε. Συμβαίνει όταν ο διανομέας δεν έχει συνδεθεί ποτέ από
+      // την εφαρμογή ή αρνήθηκε την άδεια ειδοποιήσεων.
+      if (data?.skipped) {
+        toast.warning('Ο διανομέας δεν έχει ενεργές ειδοποιήσεις στο κινητό του — δεν θα χτυπήσει. Πρέπει να μπει στην εφαρμογή και να δώσει άδεια ειδοποιήσεων.');
       }
     } catch (e) {
       console.error('[assignment push]', e);
@@ -548,6 +556,12 @@ export default function LiveMap() {
     const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;", { danger: true, confirmLabel: 'Ακύρωση παραγγελίας' });
     if (!isConfirmed) return;
 
+    // Ποιος την είχε αναλάβει, ΠΡΙΝ το optimistic update τη βγάλει από τη λίστα.
+    // Μόνο σε 'accepted' έχει νόημα: σε 'pending'/'scheduled' δεν την κρατά κανείς,
+    // και μια ειδοποίηση «ακυρώθηκε» θα ήταν ακατανόητη.
+    const cancelled = orders.find(o => o.id === orderId);
+    const assignedDriverId = cancelled?.status === 'accepted' ? cancelled.driver_id : null;
+
     // Optimistic Update
     setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
 
@@ -562,6 +576,9 @@ export default function LiveMap() {
       fetchActiveOrders(); // Revert
     } else {
       toast.success("Η παραγγελία ακυρώθηκε.");
+      // Ο διανομέας μπορεί να είναι ήδη καθ' οδόν προς το κατάστημα — χωρίς push θα
+      // το μάθει μόνο αν τύχει να κοιτάξει την εφαρμογή.
+      if (assignedDriverId) notifyDriverOfAssignment(orderId, assignedDriverId, 'cancel');
     }
   };
 
