@@ -472,8 +472,13 @@ export default function LiveMap() {
         body: { orderId, driverId, kind },
       });
       if (error) {
-        console.error('[assignment push]', error);
-        toast.error('Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
+        // Το functions.invoke δίνει σκέτο «non-2xx» — ο πραγματικός λόγος είναι στο
+        // ΣΩΜΑ της απάντησης (error.context). Χωρίς αυτό κάθε αποτυχία έμοιαζε ίδια
+        // και ο διαχειριστής δεν είχε τρόπο να καταλάβει τι να διορθώσει.
+        let reason = '';
+        try { reason = (await error.context?.json?.())?.reason || ''; } catch (_) {}
+        console.error('[assignment push]', error, reason);
+        toast.error(reason || 'Η ειδοποίηση ήχου στον διανομέα απέτυχε — ίσως δεν το αντιληφθεί μέχρι να ανοίξει την εφαρμογή.');
         return;
       }
       // Διανομέας χωρίς fcm_token: η function απαντά 200 με `skipped`, οπότε χωρίς
