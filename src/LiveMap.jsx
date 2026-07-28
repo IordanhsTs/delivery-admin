@@ -19,7 +19,7 @@ import { formatKm, formatEuro, formatCountdown, orderDurations } from './distanc
 const TILES = {
   // Επαναφορά στους Carto μέχρι να βάλουμε το επίσημο Google Maps API
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+  light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
 };
 
 // Τα εικονίδια έρχονται από το ΙΔΙΟ το πακέτο leaflet (node_modules) και μπαίνουν
