@@ -1422,9 +1422,13 @@ export default function LiveMap() {
 const START_HOUR = 7;  // πρωί
 const END_HOUR = 23;   // η μπάρα 23:00 καλύπτει 23:00–00:00 (μεσάνυχτα)
 
-// Ζει στην κάρτα κάτω δεξιά (πλάτος 340px), οπότε είναι σφιχτό: χαμηλές μπάρες,
-// ώρες ανά 2 και καμία τιμή πάνω από τις μπάρες — 17 νούμερα δεν χωρούν. Οι
-// ακριβείς τιμές μένουν διαθέσιμες στο tooltip κάθε μπάρας.
+// Ζει στην κάρτα κάτω δεξιά (πλάτος 340px), οπότε είναι σφιχτό: χαμηλές μπάρες
+// και καμία τιμή πάνω από τις μπάρες — 17 νούμερα δεν χωρούν. Οι ακριβείς τιμές
+// μένουν διαθέσιμες στο tooltip κάθε μπάρας.
+// Ο άξονας ωρών ζει σε ξεχωριστή γραμμή κάτω από τις μπάρες: έτσι το πλάτος της
+// ετικέτας δεν επηρεάζει το ύψος/πλάτος της μπάρας και μπορεί να είναι αναγνώσιμη
+// (10px, ανά 4 ώρες, μορφή «07:00»). Η τρέχουσα ώρα δεν παίρνει δικό της νούμερο
+// — θα στοίβαζε ετικέτες — αλλά πράσινη κουκκίδα στον άξονα.
 function WorkloadChart({ matrix, loading, isDark }) {
   const todayDow = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayDow);
@@ -1494,43 +1498,75 @@ function WorkloadChart({ matrix, loading, isDark }) {
           Δεν υπάρχουν ακόμη αρκετά δεδομένα για {DOW_FULL[selectedDay]}.
         </div>
       ) : (
-        <div className="flex items-end justify-between gap-[3px]" style={{ height: 96 }}>
-          {hours.map(h => {
-            const val = dayData[h] || 0;
-            const pct = dayMax > 0 ? (val / dayMax) * 100 : 0;
-            const isNow = selectedDay === todayDow && h === currentHour;
-            return (
-              <div
-                key={h}
-                className="flex-1 flex flex-col items-center justify-end h-full group"
-                title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmt(val)} παραγγελίες`}
-              >
-                {/* Μπάρα */}
+        <>
+          {/* Μπάρες — κάθονται πάνω σε γραμμή βάσης, ώστε ο άξονας από κάτω να
+              διαβάζεται ως άξονας και όχι ως σκόρπια νούμερα. */}
+          <div
+            className="flex items-end justify-between gap-[3px] border-b"
+            style={{ height: 96, borderColor: 'var(--border-default)' }}
+          >
+            {hours.map(h => {
+              const val = dayData[h] || 0;
+              const pct = dayMax > 0 ? (val / dayMax) * 100 : 0;
+              const isNow = selectedDay === todayDow && h === currentHour;
+              return (
                 <div
-                  className="w-full rounded-t-[3px] transition-all duration-300"
-                  style={{
-                    height: `${Math.max(pct, val > 0 ? 4 : 0)}%`,
-                    minHeight: val > 0 ? 3 : 0,
-                    background: isNow
-                      ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
-                      : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
-                    boxShadow: isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
-                  }}
-                />
-                {/* Ώρα ανά 2 (μονές, ώστε να φαίνονται και οι δύο άκρες 7/23) — 17
-                    ετικέτες δεν χωράνε σε 340px. Οι κρυφές παίρνουν NBSP και όχι
-                    κενό: άδειο span έχει ύψος 0 και θα κατέβαζε τη μπάρα του
-                    χαμηλότερα από τις διπλανές. */}
-                <span
-                  className="text-[8px] mt-1"
-                  style={{ color: isNow ? 'var(--map-green)' : (isDark ? '#64748b' : '#94a3b8'), fontWeight: isNow ? 700 : 400 }}
+                  key={h}
+                  className="flex-1 min-w-0 flex items-end h-full"
+                  title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmt(val)} παραγγελίες`}
                 >
-                  {h % 2 !== START_HOUR % 2 && !isNow ? ' ' : h}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                  <div
+                    className="w-full rounded-t-[3px] transition-all duration-300"
+                    style={{
+                      height: `${Math.max(pct, val > 0 ? 4 : 0)}%`,
+                      minHeight: val > 0 ? 3 : 0,
+                      background: isNow
+                        ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
+                        : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
+                      boxShadow: isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Άξονας ωρών: ετικέτα ανά 4 ώρες (07:00 · 11:00 · 15:00 · 19:00 · 23:00).
+              Ζει σε δική της γραμμή, οπότε το πλάτος της ετικέτας δεν πειράζει τις
+              μπάρες: ξεχειλίζει συμμετρικά πάνω στις κενές διπλανές στήλες και
+              χωράει άνετα μέσα στο p-3 της κάρτας. Η τρέχουσα ώρα δεν παίρνει δικό
+              της νούμερο (θα στοίβαζε ετικέτες) αλλά πράσινη κουκκίδα. */}
+          <div className="flex justify-between gap-[3px] mt-1.5">
+            {hours.map(h => {
+              const isLabelled = (h - START_HOUR) % 4 === 0;
+              const isNow = selectedDay === todayDow && h === currentHour;
+              return (
+                <div key={h} className="flex-1 min-w-0 flex items-center justify-center h-3">
+                  {isLabelled ? (
+                    <span
+                      className="text-[10px] font-semibold tabular-nums"
+                      style={{
+                        whiteSpace: 'nowrap',
+                        // Σε light το --map-green-deep (#16a34a) πιάνει μόλις 3.3:1 πάνω
+                        // σε λευκό — κάτω από το AA για 10px. Πιο βαθύ πράσινο εδώ (5.0:1).
+                        color: isNow
+                          ? (isDark ? 'var(--map-green)' : '#15803d')
+                          : (isDark ? '#94a3b8' : '#64748b'),
+                      }}
+                    >
+                      {String(h).padStart(2, '0')}:00
+                    </span>
+                  ) : isNow ? (
+                    <span
+                      title="Τρέχουσα ώρα"
+                      style={{ width: 4, height: 4, borderRadius: 9999, background: 'var(--map-green)' }}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
