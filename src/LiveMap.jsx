@@ -67,6 +67,9 @@ function playAlertSound() {
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DOW_LABELS = { 1: 'Δευ', 2: 'Τρι', 3: 'Τετ', 4: 'Πεμ', 5: 'Παρ', 6: 'Σαβ', 0: 'Κυρ' };
 const DOW_FULL = { 1: 'Δευτέρα', 2: 'Τρίτη', 3: 'Τετάρτη', 4: 'Πέμπτη', 5: 'Παρασκευή', 6: 'Σάββατο', 0: 'Κυριακή' };
+// Οι τιμές του matrix είναι μέσοι όροι, άρα δεκαδικοί. Κάτω από 10 το δεκαδικό
+// μετράει (0.4 vs 0.9 παραγγελίες την ώρα), από 10 και πάνω είναι θόρυβος.
+const fmtLoad = (v) => (v >= 10 ? Math.round(v).toString() : v.toFixed(1));
 
 // ── Κατάσταση σήματος διανομέα (ανοχή σε χαμένο σήμα σε ασανσέρ/πολυκατοικίες) ──
 // < FRESH: online · FRESH–OFFLINE: μένει στον χάρτη ως «χωρίς σήμα» · > OFFLINE: φεύγει.
@@ -170,6 +173,16 @@ function StatTile({ Icon, value, label, tint, bg, border, title }) {
     </div>
   );
 }
+
+// Χρωματισμός του πλακιδίου «Αναμενόμενος φόρτος» ανά ένταση. Κρατά την κλιμάκωση
+// warning→danger της θέσης που έπαιρνε πριν η «Μεγαλύτερη αναμονή»: το πλακίδιο
+// αυτό είναι που λέει «ετοιμάσου» στον διαχειριστή.
+const NOW_LOAD_STYLE = {
+  idle: { tint: 'var(--text-muted)', bg: 'var(--bg-tertiary)', border: 'var(--border-subtle)' },
+  low:  { tint: 'var(--success)',    bg: 'var(--success-bg)',  border: 'var(--success-border)' },
+  mid:  { tint: 'var(--warning)',    bg: 'var(--warning-bg)',  border: 'var(--warning-border)' },
+  high: { tint: 'var(--danger)',     bg: 'var(--danger-bg)',   border: 'var(--danger-border)' },
+};
 
 // ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
 // Ξεχωριστή κάρτα ανά ενότητα, με κουμπί σύμπτυξης: με 8 διανομείς σε βάρδια η
@@ -705,17 +718,6 @@ export default function LiveMap() {
   // Διανομείς που μετράνε ως «σε βάρδια» (ό,τι δείχνει και ο χάρτης).
   const visibleDrivers = drivers.filter(d => signalAgeMin(d) <= SIGNAL_OFFLINE_MIN);
 
-  // ── Σύνοψη ημέρας: η παλαιότερη εκκρεμής (πόση ώρα περιμένει κανείς τώρα) ──
-  // Ο μοναδικός αριθμός που λέει «κάτι κολλάει αυτή τη στιγμή» χωρίς να διαβάσεις
-  // όλη τη δεξιά στήλη — γίνεται κόκκινος στα 5′, όσο και το isLate των καρτών.
-  const oldestPendingMs = pendingOrders.reduce((oldest, o) => {
-    const t = new Date(o.created_at).getTime();
-    return t < oldest ? t : oldest;
-  }, Infinity);
-  const oldestPendingMins = Number.isFinite(oldestPendingMs)
-    ? Math.floor((currentTime.getTime() - oldestPendingMs) / 60000)
-    : null;
-
   // ── Σύνοψη ημέρας: ώρα αιχμής της σημερινής ημέρας εβδομάδας ──
   // Βγαίνει από το ΙΔΙΟ matrix του heatmap (καμία επιπλέον κλήση στη βάση).
   let peakHour = null;
@@ -726,6 +728,24 @@ export default function LiveMap() {
       if ((todayCurve[h] || 0) > peakValue) { peakValue = todayCurve[h]; peakHour = h; }
     }
   }
+
+  // ── Σύνοψη ημέρας: εκτιμώμενος φόρτος της ώρας που τρέχει τώρα ──
+  // «Τι να περιμένω μέσα στην επόμενη ώρα»: ο ιστορικός μ.ό. αυτής της ώρας για τη
+  // σημερινή ημέρα εβδομάδας — η ίδια μπάρα που φωτίζεται πράσινη στο γράφημα δεξιά.
+  // null = δεν έχει έρθει ακόμη το matrix· διαφορετικό από 0, που σημαίνει
+  // «ιστορικά ήσυχη ώρα» και θέλει να φαίνεται ως πληροφορία.
+  const nowLoad = todayCurve ? (todayCurve[currentTime.getHours()] || 0) : null;
+  // Ο σκέτος αριθμός δεν λέει τίποτα — 3 παραγγελίες την ώρα είναι πολλές ή λίγες
+  // αναλόγως το κατάστημα. Τον κρίνουμε σε σχέση με τη σημερινή αιχμή.
+  const nowLoadRatio = nowLoad !== null && peakValue > 0 ? nowLoad / peakValue : 0;
+  const nowLoadLevel =
+    nowLoad === null || nowLoad === 0 ? 'idle'
+    : nowLoadRatio >= 0.75 ? 'high'
+    : nowLoadRatio >= 0.4 ? 'mid'
+    : 'low';
+  // Το «~» μπαίνει μόνο σε πραγματική εκτίμηση: το «~0.0» θα δήλωνε ακρίβεια που
+  // δεν υπάρχει, ενώ σκέτο 0 διαβάζεται σωστά ως «ιστορικά ήσυχη ώρα».
+  const nowLoadText = nowLoad === null ? '—' : nowLoad === 0 ? '0' : `~${fmtLoad(nowLoad)}`;
 
   const railCardStyle = (tint) => ({
     backgroundColor: 'var(--bg-card)',
@@ -1379,13 +1399,16 @@ export default function LiveMap() {
             />
 
             <StatTile
-              Icon={Hourglass}
-              value={oldestPendingMins !== null ? `${oldestPendingMins} λ.` : '—'}
-              label="Μεγαλύτερη αναμονή"
-              tint={oldestPendingMins === null ? 'var(--text-muted)' : (oldestPendingMins >= 5 ? 'var(--danger)' : 'var(--warning)')}
-              bg={oldestPendingMins === null ? 'var(--bg-tertiary)' : (oldestPendingMins >= 5 ? 'var(--danger-bg)' : 'var(--warning-bg)')}
-              border={oldestPendingMins === null ? 'var(--border-subtle)' : (oldestPendingMins >= 5 ? 'var(--danger-border)' : 'var(--warning-border)')}
-              title="Πόση ώρα περιμένει η παλαιότερη αδιάθετη παραγγελία αυτή τη στιγμή"
+              Icon={Flame}
+              value={nowLoadText}
+              label="Αναμενόμενος φόρτος"
+              tint={NOW_LOAD_STYLE[nowLoadLevel].tint}
+              bg={NOW_LOAD_STYLE[nowLoadLevel].bg}
+              border={NOW_LOAD_STYLE[nowLoadLevel].border}
+              title={nowLoad === null
+                ? 'Δεν υπάρχουν ακόμη αρκετά δεδομένα για εκτίμηση'
+                : `${DOW_FULL[currentTime.getDay()]} ${String(currentTime.getHours()).padStart(2, '0')}:00–${String((currentTime.getHours() + 1) % 24).padStart(2, '0')}:00 · ιστορικά μ.ό. ${fmtLoad(nowLoad)} παραγγελίες`
+                  + (peakValue > 0 ? ` — ${Math.round(nowLoadRatio * 100)}% της σημερινής αιχμής` : '')}
             />
 
             <StatTile
@@ -1439,8 +1462,6 @@ function WorkloadChart({ matrix, loading, isDark }) {
   const dayData = (matrix && matrix[selectedDay]) || {};
   const dayMax = Math.max(...hours.map(h => dayData[h] || 0), 0);
   const currentHour = new Date().getHours();
-
-  const fmt = (v) => (v >= 10 ? Math.round(v).toString() : v.toFixed(1));
 
   return (
     <div className="p-3">
@@ -1513,7 +1534,7 @@ function WorkloadChart({ matrix, loading, isDark }) {
                 <div
                   key={h}
                   className="flex-1 min-w-0 flex items-end h-full"
-                  title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmt(val)} παραγγελίες`}
+                  title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmtLoad(val)} παραγγελίες`}
                 >
                   <div
                     className="w-full rounded-t-[3px] transition-all duration-300"
