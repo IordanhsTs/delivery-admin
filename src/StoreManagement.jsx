@@ -1,9 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
-import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut, MapPin } from 'lucide-react';
+import { supabase, getTenantSchema } from './supabaseClient';
+import { Building2, X, Plus, Check, Phone, Mail, Edit2, Bike, LogOut, MapPin, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion } from 'framer-motion';
+
+// ── Παρουσία διανομέα: «συνδεδεμένος» ≠ «στέλνει στίγμα» ─────────────────────
+// Το is_active λέει μόνο ότι η βάρδια είναι ανοιχτή· καθαρίζει σε κανονική
+// αποσύνδεση. Αν το κινητό σωπάσει (χωρίς σήμα, κλειστό, εκτός μπαταρίας) το
+// flag μένει true και ο διανομέας δείχνει για πάντα ενεργός. Η αλήθεια είναι
+// στο last_seen, που ανεβαίνει με κάθε στίγμα του native service.
+//
+// ΠΡΟΣΟΧΗ: εδώ ΜΟΝΟ ΕΜΦΑΝΙΖΟΥΜΕ. Δεν πειράζουμε ποτέ αυτόματα το is_active —
+// θα σήμαινε αποσύνδεση του διανομέα από την εφαρμογή του (βλ. status listener
+// στο App.js του final-app), δηλαδή ακριβώς το πρόβλημα που λύνουμε.
+const SIGNAL_FRESH_MIN = 2;    // ίδια κατώφλια με τον χάρτη (LiveMap.jsx)
+const SIGNAL_OFFLINE_MIN = 20;
+
+function driverPresence(courier, now) {
+  if (courier.is_blocked) return { label: 'Μπλοκαρισμένος', tone: 'blocked' };
+  if (courier.is_active === false) return { label: 'Αποσυνδεδεμένος', tone: 'off' };
+  const ageMin = courier.last_seen
+    ? (now - new Date(courier.last_seen).getTime()) / 60000
+    : Infinity;
+  if (ageMin <= SIGNAL_FRESH_MIN) return { label: 'Σε βάρδια', tone: 'live' };
+  if (ageMin <= SIGNAL_OFFLINE_MIN) return { label: `Χωρίς σήμα ${Math.floor(ageMin)}′`, tone: 'stale' };
+  if (ageMin === Infinity) return { label: 'Χωρίς στίγμα', tone: 'lost' };
+  const hours = Math.floor(ageMin / 60);
+  return { label: hours >= 1 ? `Χωρίς σήμα ${hours}ω` : `Χωρίς σήμα ${Math.floor(ageMin)}′`, tone: 'lost' };
+}
+
+const PRESENCE_STYLES = {
+  live:    'text-[#38EF7D] border-[#38EF7D]/50',
+  stale:   'text-[#C5A066] border-[#C5A066]/50',
+  lost:    'text-[#EF4444] border-[#EF4444]/50',
+  off:     'text-slate-400 border-slate-400/40',
+  blocked: 'text-[#EF4444] border-[#EF4444]/50',
+};
 
 export default function StoreManagement() {
   const [activeTab, setActiveTab] = useState('stores'); // 'stores' | 'couriers'
@@ -34,12 +67,35 @@ export default function StoreManagement() {
   const [editingCourier, setEditingCourier] = useState(null);
   const [editCourierData, setEditCourierData] = useState({ full_name: '', phone: '', email: '' });
 
-  useEffect(() => { 
+  useEffect(() => {
     if (activeTab === 'stores') {
-      fetchStores(); 
+      fetchStores();
     } else {
       fetchCouriers();
     }
+  }, [activeTab]);
+
+  // Το «πριν X λεπτά» πρέπει να μεγαλώνει μόνο του, αλλιώς η καρτέλα θα έδειχνε
+  // για ώρες τη φρεσκάδα της στιγμής που φορτώθηκε.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (activeTab !== 'couriers') return;
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [activeTab]);
+
+  // Τα στίγματα φτάνουν ανά 10", οπότε η κατάσταση παρουσίας αλλάζει χωρίς καμία
+  // ενέργεια του διαχειριστή — χωρίς realtime η λίστα θα έμενε παγωμένη.
+  useEffect(() => {
+    if (activeTab !== 'couriers') return;
+    const channel = supabase
+      .channel('admin:couriers_presence')
+      .on('postgres_changes', { event: 'UPDATE', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
+        if (!payload.new) return;
+        setCouriers(prev => prev.map(c => (c.id === payload.new.id ? { ...c, ...payload.new } : c)));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [activeTab]);
 
   // === STORES FUNCTIONS ===
@@ -466,9 +522,25 @@ export default function StoreManagement() {
                       {editingCourier === courier.id ? (
                         <input type="text" value={editCourierData.full_name} onChange={(e) => setEditCourierData({...editCourierData, full_name: e.target.value})} className="p-2 w-full rounded-md border border-[#C5A066]/30 btn-glass text-adaptive-light outline-none mb-2" placeholder="Ονοματεπώνυμο" />
                       ) : (
-                        <span className="font-bold text-adaptive-light text-lg md:text-base flex items-center gap-2"><Bike size={18} /> {courier.full_name}</span>
+                        <span className="font-bold text-adaptive-light text-lg md:text-base flex items-center gap-2 flex-wrap">
+                          <Bike size={18} /> {courier.full_name}
+                          {(() => {
+                            const presence = driverPresence(courier, now);
+                            return (
+                              <span
+                                title="Βασίζεται στο τελευταίο στίγμα GPS του κινητού"
+                                className={`px-2 py-0.5 rounded-full border text-[11px] font-bold whitespace-nowrap flex items-center gap-1 ${PRESENCE_STYLES[presence.tone]}`}
+                              >
+                                {presence.tone === 'live'
+                                  ? <span className="w-1.5 h-1.5 rounded-full bg-[#38EF7D] animate-pulse" />
+                                  : (presence.tone === 'stale' || presence.tone === 'lost') && <AlertTriangle size={11} />}
+                                {presence.label}
+                              </span>
+                            );
+                          })()}
+                        </span>
                       )}
-                      
+
                       <span className="text-adaptive text-sm md:hidden mt-1 flex flex-col gap-2">
                         {editingCourier === courier.id ? (
                           <>
