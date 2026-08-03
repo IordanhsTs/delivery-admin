@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
 import BillingDashboard from './BillingDashboard';
+import FuelReport from './FuelReport';
+import Schedule from './Schedule';
+import Announcements from './Announcements';
 import LiveMap from './LiveMap';
 import StoreManagement from './StoreManagement';
 import Statistics from './Statistics';
@@ -64,6 +67,16 @@ const ReceiptIcon = () => (
   </svg>
 );
 
+const FuelIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="22" x2="15" y2="22"/>
+    <line x1="4" y1="9" x2="14" y2="9"/>
+    <path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/>
+    <path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/>
+  </svg>
+);
+
 const BuildingIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -105,12 +118,32 @@ const MoreIcon = () => (
   </svg>
 );
 
+const CalendarIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="4" rx="2"/>
+    <path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/>
+    <path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/>
+  </svg>
+);
+
+const MegaphoneIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m3 11 18-5v12L3 14v-3z"/>
+    <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+  </svg>
+);
+
 const NAV_ITEMS = [
   { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
   { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
   { id: 'search',       Icon: SearchIcon,   shortLabel: 'Αναζήτηση',  fullLabel: 'Αναζήτηση' },
   { id: 'messages',     Icon: MessageSquareIcon, shortLabel: 'Μηνύματα', fullLabel: 'Μηνύματα' },
+  { id: 'schedule',     Icon: CalendarIcon, shortLabel: 'Πρόγραμμα',  fullLabel: 'Πρόγραμμα εβδομάδας' },
+  { id: 'announcements',Icon: MegaphoneIcon, shortLabel: 'Ανακοιν.',  fullLabel: 'Ανακοινώσεις' },
   { id: 'billing',      Icon: ReceiptIcon,  shortLabel: 'Εκκαθάριση', fullLabel: 'Εκκαθάριση' },
+  { id: 'fuel',         Icon: FuelIcon,     shortLabel: 'Καύσιμα',    fullLabel: 'Χιλιόμετρα & Καύσιμα' },
   { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
   { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
 ];
@@ -123,12 +156,15 @@ const MOBILE_PRIMARY_IDS = ['map', 'create-order', 'messages'];
 // Ο χάρτης ('map') μένει εκτός αυτού του object — φορτώνεται ξεχωριστά και μόνιμα
 // mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
 const VIEW_COMPONENTS = {
-  'create-order': <CreateOrder />,
-  'search':       <OrderSearch />,
-  'messages':     <Messages />,
-  'billing':      <BillingDashboard />,
-  'stores':       <StoreManagement />,
-  'stats':        <Statistics />,
+  'create-order':  <CreateOrder />,
+  'search':        <OrderSearch />,
+  'messages':      <Messages />,
+  'schedule':      <Schedule />,
+  'announcements': <Announcements />,
+  'billing':       <BillingDashboard />,
+  'fuel':          <FuelReport />,
+  'stores':        <StoreManagement />,
+  'stats':         <Statistics />,
 };
 
 // Κόκκινη κουκκίδα με το πλήθος αδιάβαστων μηνυμάτων από καταστήματα. Ζει σε δικό
