@@ -42,12 +42,17 @@ function prettyRange(from, to) {
 const hhmm = (t) => String(t || '').slice(0, 5);
 
 /**
- * Οι ώρες που καλύπτει ένα διάστημα, ως ζεύγη [ημέρα, ώρα]. ΝΥΧΤΕΡΙΝΟ: όταν η
- * λήξη δεν είναι μετά την έναρξη, το διάστημα περνά τα μεσάνυχτα και οι πρώτες
- * ώρες μετράνε στην ΕΠΟΜΕΝΗ ημέρα — αλλιώς μια βάρδια 17:00-01:00 θα εμφανιζόταν
- * να καλύπτει όλο το πρωί της ίδιας μέρας.
+ * Οι ώρες που καλύπτει ένα διάστημα, ως ΩΡΕΣ ΑΠΟ ΤΑ ΜΕΣΑΝΥΧΤΑ ΤΗΣ ΙΔΙΑΣ ΗΜΕΡΑΣ
+ * (0-47). ΝΥΧΤΕΡΙΝΟ: όταν η λήξη δεν είναι μετά την έναρξη, το διάστημα περνά τα
+ * μεσάνυχτα και οι ώρες συνεχίζουν στο 24, 25… — δηλαδή μια βάρδια 17:00-01:00
+ * της Δευτέρας δίνει 17…24 και μένει ΟΛΗ στη γραμμή της Δευτέρας.
+ *
+ * ΓΙΑΤΙ ΟΧΙ ΜΕ ΜΕΤΑΦΟΡΑ ΣΤΗΝ ΕΠΟΜΕΝΗ ΗΜΕΡΑ (όπως ήταν αρχικά): η εταιρεία
+ * κλείνει στη 01:00, άρα η «Δευτέρα» ως εργάσιμη ημέρα τελειώνει 01:00 Τρίτης.
+ * Με μεταφορά, εκείνη η ώρα εμφανιζόταν στη γραμμή της Τρίτης — και της Κυριακής
+ * χανόταν εντελώς, γιατί ξεχείλιζε εκτός εβδομάδας.
  */
-function coveredHours(dayIndex, start, end) {
+function coveredHours(start, end) {
   const h = (t) => Number(String(t).slice(0, 2));
   const m = (t) => Number(String(t).slice(3, 5));
   // Στρογγυλοποίηση προς τα «μέσα»: μια βάρδια 09:30-17:00 δεν καλύπτει
@@ -55,14 +60,15 @@ function coveredHours(dayIndex, start, end) {
   // κάλυψη που δεν υπάρχει.
   const from = h(start) + (m(start) > 0 ? 1 : 0);
   const rawTo = h(end) + (m(end) > 0 ? 1 : 0);
-  const out = [];
   const overnight = String(end) <= String(start);
   const to = overnight ? rawTo + 24 : rawTo;
-  for (let x = from; x < to; x++) {
-    out.push([(dayIndex + Math.floor(x / 24)) % 7, x % 24]);
-  }
+  const out = [];
+  for (let x = from; x < to && x < 48; x++) out.push(x);
   return out;
 }
+
+/** «25» → «01:00». Οι ώρες μετά το 24 είναι της επόμενης ημερολογιακής ημέρας. */
+const hourLabel = (x) => `${String(x % 24).padStart(2, '0')}:00`;
 
 export default function Schedule() {
   // Ο διαχειριστής μπαίνει εδώ για να φτιάξει την ΕΠΟΜΕΝΗ εβδομάδα — αυτή
@@ -74,12 +80,19 @@ export default function Schedule() {
   const [draft, setDraft] = useState({});                 // driverId → { ymd: [slot] }
   const [publishedAt, setPublishedAt] = useState(null);
   const [targets, setTargets] = useState([]);
-  const [settings, setSettings] = useState({ deadline_dow: 4, deadline_time: '22:00' });
+  const [settings, setSettings] = useState({
+    deadline_dow: 4, deadline_time: '22:00', open_hour: 7, close_hour: 25,
+  });
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [editing, setEditing] = useState(null); // { driverId, date, index }
+  // null = όλη η εβδομάδα · 0-6 = μία ημέρα. Ο πελάτης «χάνεται» στο πλέγμα 7×24,
+  // οπότε η ίδια σελίδα δείχνει είτε την πανοραμική είτε μία ημέρα με ονόματα.
+  const [focusDay, setFocusDay] = useState(null);
+  // Πόσες δηλώσεις μπήκαν μόνες τους στο προσχέδιο στο τελευταίο φόρτωμα.
+  const [autoMerged, setAutoMerged] = useState([]);
 
   const weekEnd = addDays(weekStart, 6);
   const weekKey = ymd(weekStart);
@@ -102,16 +115,18 @@ export default function Schedule() {
         supabase.from('schedule_shifts')
           .select('driver_id, work_date, start_time, end_time, source')
           .eq('week_start', weekKey).order('work_date').order('start_time'),
-        supabase.from('schedule_weeks').select('published_at').eq('week_start', weekKey).maybeSingle(),
+        supabase.from('schedule_weeks').select('published_at, updated_at').eq('week_start', weekKey).maybeSingle(),
         supabase.from('schedule_coverage_targets').select('*').order('start_hour'),
-        supabase.from('schedule_settings').select('deadline_dow, deadline_time').maybeSingle(),
+        supabase.from('schedule_settings')
+          .select('deadline_dow, deadline_time, open_hour, close_hour').maybeSingle(),
       ]);
 
       if (driverRes.error) throw driverRes.error;
 
       // Μπλοκαρισμένοι διανομείς δεν μπαίνουν σε πρόγραμμα. Οι ανενεργοί ΝΑΙ:
       // το `is_active` εδώ σημαίνει «σε βάρδια τώρα», όχι «εργαζόμενος».
-      setDrivers((driverRes.data || []).filter((d) => !d.is_blocked));
+      const activeDrivers = (driverRes.data || []).filter((x) => !x.is_blocked);
+      setDrivers(activeDrivers);
 
       const avail = {};
       (availRes.data || []).forEach((r) => {
@@ -135,8 +150,41 @@ export default function Schedule() {
           start: hhmm(r.start_time), end: hhmm(r.end_time), source: r.source,
         });
       });
+
+      // ── ΟΙ ΔΗΛΩΣΕΙΣ ΜΠΑΙΝΟΥΝ ΜΟΝΕΣ ΤΟΥΣ ΣΤΟ ΠΡΟΣΧΕΔΙΟ ────────────────────
+      // Αίτημα πελάτη 03/08/2026: «δεν θέλω να πρέπει να εγκρίνω αυτό που
+      // έστειλε ο διανομέας — θέλω με τη μία να εμφανίζεται στο προσχέδιο».
+      //
+      // Ο κανόνας που κρατάει ΚΑΙ τις αποφάσεις του διαχειριστή: μπαίνει η
+      // δήλωση όποιου δήλωσε (ή ξαναδήλωσε) ΜΕΤΑ την τελευταία αποθήκευση του
+      // προγράμματος, και μόνο σε ημέρες που το προσχέδιο είναι άδειο γι' αυτόν.
+      // Έτσι μια βάρδια που ο διαχειριστής άλλαξε με το χέρι δεν πατιέται, ενώ
+      // ό,τι νεότερο στέλνει ο διανομέας φαίνεται αμέσως χωρίς κανένα κλικ.
+      const savedAt = schedRes.data?.updated_at ? new Date(schedRes.data.updated_at) : null;
+      const mergedNames = [];
+      activeDrivers.forEach((dr) => {
+        const declaredAt = sub[dr.id]?.updated_at ? new Date(sub[dr.id].updated_at) : null;
+        if (!declaredAt) return;
+        if (savedAt && declaredAt <= savedAt) return;
+
+        let added = false;
+        Object.entries(avail[dr.id] || {}).forEach(([date, slots]) => {
+          if (d[dr.id]?.[date]?.length) return;  // ο διαχειριστής έχει ήδη βάλει κάτι εδώ
+          if (!d[dr.id]) d[dr.id] = {};
+          d[dr.id][date] = slots.map((s) => ({
+            start: s.all_day ? '17:00' : s.start,
+            end: s.all_day ? '23:00' : s.end,
+            source: 'auto',
+          }));
+          added = true;
+        });
+        if (added) mergedNames.push(dr.full_name);
+      });
+
       setDraft(d);
-      setDirty(false);
+      // Αν μπήκε κάτι μόνο του, το προσχέδιο ΔΕΝ ταυτίζεται πια με τη βάση.
+      setDirty(mergedNames.length > 0);
+      setAutoMerged(mergedNames);
 
       setPublishedAt(schedRes.data?.published_at || null);
       setTargets(targetRes.data || []);
@@ -151,11 +199,25 @@ export default function Schedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Αυτόματη κατάρτιση ────────────────────────────────────────────────────
+  // ── Επαναφορά από τις δηλώσεις ────────────────────────────────────────────
   // Αντιγράφει αυτούσιες τις δηλώσεις. Ο πελάτης το είπε καθαρά: «μπορεί να μη
   // στέκει» — δεν προσπαθούμε να λύσουμε πρόβλημα βελτιστοποίησης, δίνουμε την
   // αφετηρία και δείχνουμε τα κενά.
-  function autoFill() {
+  //
+  // Πλέον οι δηλώσεις μπαίνουν ΜΟΝΕΣ ΤΟΥΣ στο φόρτωμα (βλ. load), οπότε αυτό το
+  // κουμπί έμεινε για ένα πράγμα: να πετάξει τις χειροκίνητες αλλαγές και να
+  // ξαναρχίσει από το μηδέν. Γι' αυτό ρωτάει πρώτα.
+  async function autoFill() {
+    const manual = Object.values(draft)
+      .some((byDate) => Object.values(byDate).some((slots) => slots.some((s) => s.source === 'manual')));
+    if (manual) {
+      const ok = await confirmDialog(
+        'Το προσχέδιο θα ξαναχτιστεί από τις δηλώσεις και οι χειροκίνητες αλλαγές σου θα χαθούν. Συνέχεια;',
+        { title: 'Επαναφορά από δηλώσεις', confirmLabel: 'Επαναφορά', danger: true }
+      );
+      if (!ok) return;
+    }
+
     const next = {};
     Object.entries(availability).forEach(([driverId, byDate]) => {
       next[driverId] = {};
@@ -172,7 +234,8 @@ export default function Schedule() {
     });
     setDraft(next);
     setDirty(true);
-    toast.success('Το προσχέδιο δημιουργήθηκε από τις δηλώσεις.');
+    setAutoMerged([]);
+    toast.success('Το προσχέδιο ξαναχτίστηκε από τις δηλώσεις.');
   }
 
   // ── Επεξεργασία κελιού ────────────────────────────────────────────────────
@@ -279,29 +342,53 @@ export default function Schedule() {
     toast.success('Το πρόγραμμα αποσύρθηκε.');
   }
 
+  // ── Ώρες λειτουργίας ──────────────────────────────────────────────────────
+  // Οι στήλες της μπάρας. Ώρες από τα μεσάνυχτα της ίδιας ημέρας: το 24 είναι
+  // 00:00 της επόμενης, το 25 η 01:00 — δηλαδή το κλείσιμο του πελάτη.
+  // Εκτός ωραρίου δεν ζωγραφίζουμε τίποτα: ήταν 6 μόνιμα άδειες στήλες.
+  const openHour = Number(settings.open_hour ?? 7);
+  const closeHour = Number(settings.close_hour ?? 25);
+  const hourCols = useMemo(() => {
+    const span = Math.max(1, Math.min(24, closeHour - openHour));
+    return Array.from({ length: span }, (_, i) => openHour + i);
+  }, [openHour, closeHour]);
+
+  const driverName = useCallback(
+    (id) => drivers.find((d) => d.id === id)?.full_name || '—',
+    [drivers]
+  );
+
   // ── Κάλυψη ────────────────────────────────────────────────────────────────
-  // Πίνακας 7×24 με το πλήθος διανομέων και τον στόχο κάθε ώρας.
+  // Πλήθος ΚΑΙ ονόματα ανά [ημέρα][ώρα]. Τα ονόματα είναι απαίτηση του πελάτη:
+  // «βλέπεις ότι 1 έχεις δηλωμένο, αλλά ποιος;».
   const coverage = useMemo(() => {
-    const counts = Array.from({ length: 7 }, () => Array(24).fill(0));
-    Object.values(draft).forEach((byDate) => {
+    const counts = Array.from({ length: 7 }, () => Array(48).fill(0));
+    const names = Array.from({ length: 7 }, () => Array.from({ length: 48 }, () => []));
+
+    Object.entries(draft).forEach(([driverId, byDate]) => {
+      const name = driverName(driverId);
       Object.entries(byDate).forEach(([date, slots]) => {
         const dayIndex = dates.indexOf(date);
         if (dayIndex < 0) return;
         slots.forEach((s) => {
-          coveredHours(dayIndex, s.start, s.end).forEach(([d, h]) => {
-            // `d < dayIndex` συμβαίνει μόνο όταν μια βάρδια Κυριακής ξεχειλίζει
-            // στη Δευτέρα: εκείνες οι ώρες ανήκουν στην ΕΠΟΜΕΝΗ εβδομάδα και δεν
-            // μετριούνται εδώ — αλλιώς θα «κάλυπταν» τη Δευτέρα αυτής.
-            if (d >= dayIndex) counts[d][h] += 1;
+          coveredHours(s.start, s.end).forEach((x) => {
+            counts[dayIndex][x] += 1;
+            // Σπαστό ωράριο θα έβαζε το ίδιο όνομα δύο φορές στην ίδια ώρα μόνο
+            // αν τα δύο διαστήματα επικαλύπτονταν — ο έλεγχος είναι φθηνός.
+            if (!names[dayIndex][x].includes(name)) names[dayIndex][x].push(name);
           });
         });
       });
     });
 
-    const minFor = (dayIndex, hour) => {
+    const minFor = (dayIndex, x) => {
+      // Οι στόχοι ορίζονται σε ημερολογιακές ώρες 0-24, οπότε το 25 («01:00 της
+      // επομένης») ψάχνεται ως ώρα 1 της επόμενης ημέρας.
+      const hour = x % 24;
+      const day = (dayIndex + Math.floor(x / 24)) % 7;
       // Κανόνας συγκεκριμένης ημέρας υπερισχύει του γενικού.
       const specific = targets.find(
-        (t) => t.day_of_week === dayIndex + 1 && hour >= t.start_hour && hour < t.end_hour
+        (t) => t.day_of_week === day + 1 && hour >= t.start_hour && hour < t.end_hour
       );
       if (specific) return specific.min_drivers;
       const generic = targets.find(
@@ -310,21 +397,23 @@ export default function Schedule() {
       return generic ? generic.min_drivers : 0;
     };
 
-    return { counts, minFor };
-  }, [draft, targets, dates]);
+    return { counts, names, minFor };
+  }, [draft, targets, dates, driverName]);
 
+  // Κενά ΜΟΝΟ μέσα στο ωράριο λειτουργίας — μια ακάλυπτη 04:00 δεν είναι κενό,
+  // είναι κλειστό μαγαζί.
   const gaps = useMemo(() => {
     const list = [];
     for (let d = 0; d < 7; d++) {
-      for (let h = 0; h < 24; h++) {
-        const need = coverage.minFor(d, h);
-        if (need > 0 && coverage.counts[d][h] < need) {
-          list.push({ day: d, hour: h, have: coverage.counts[d][h], need });
+      for (const x of hourCols) {
+        const need = coverage.minFor(d, x);
+        if (need > 0 && coverage.counts[d][x] < need) {
+          list.push({ day: d, hour: x, have: coverage.counts[d][x], need });
         }
       }
     }
     return list;
-  }, [coverage]);
+  }, [coverage, hourCols]);
 
   // Ομαδοποίηση των κενών σε συνεχόμενα διαστήματα ανά ημέρα, ώστε η περίληψη
   // να λέει «Τρίτη 18:00-21:00» και όχι τρεις χωριστές γραμμές.
@@ -342,6 +431,7 @@ export default function Schedule() {
   }, [gaps]);
 
   const notSubmitted = drivers.filter((d) => !submitted[d.id]);
+  const visibleDays = focusDay === null ? [0, 1, 2, 3, 4, 5, 6] : [focusDay];
 
   // ── Ρυθμίσεις ─────────────────────────────────────────────────────────────
   async function saveTarget(target) {
@@ -374,6 +464,20 @@ export default function Schedule() {
       .eq('id', true);
     if (error) toast.error('Δεν αποθηκεύτηκε: ' + error.message);
     else toast.success('Η προθεσμία ενημερώθηκε.');
+  }
+
+  async function saveBusinessHours() {
+    const o = Number(settings.open_hour);
+    const c = Number(settings.close_hour);
+    if (!(c > o) || c > o + 24) {
+      toast.error('Η ώρα κλεισίματος πρέπει να είναι μετά το άνοιγμα, μέσα σε 24 ώρες.');
+      return;
+    }
+    const { error } = await supabase.from('schedule_settings')
+      .update({ open_hour: o, close_hour: c, updated_at: new Date().toISOString() })
+      .eq('id', true);
+    if (error) toast.error('Δεν αποθηκεύτηκαν: ' + error.message);
+    else toast.success('Οι ώρες λειτουργίας ενημερώθηκαν.');
   }
 
   // ── Στυλ ──────────────────────────────────────────────────────────────────
@@ -434,8 +538,9 @@ export default function Schedule() {
             <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} /> Ανανέωση
           </button>
           <button onClick={autoFill} disabled={publishedAt || busy}
+            title="Πετάει τις χειροκίνητες αλλαγές και ξαναχτίζει το προσχέδιο από τις δηλώσεις"
             className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-40" style={btn}>
-            <Wand2 size={16} /> Αυτόματη κατάρτιση
+            <Wand2 size={16} /> Επαναφορά από δηλώσεις
           </button>
           <button onClick={() => save()} disabled={!dirty || busy}
             className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-40" style={btn}>
@@ -460,6 +565,45 @@ export default function Schedule() {
       {showSettings && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 overflow-hidden">
           <div className="p-5" style={card}>
+            {/* ── Ώρες λειτουργίας ──────────────────────────────────────── */}
+            <h3 className="font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Clock size={18} /> Ώρες λειτουργίας
+            </h3>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+              Μόνο αυτές οι ώρες εμφανίζονται στην κάλυψη και μόνο σε αυτές μετράει «κενό».
+              Το κλείσιμο μπορεί να είναι μετά τα μεσάνυχτα.
+            </p>
+            <div className="flex flex-wrap items-end gap-3 mb-6">
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Άνοιγμα</label>
+                <select value={settings.open_hour ?? 7}
+                  onChange={(e) => setSettings((s) => ({ ...s, open_hour: Number(e.target.value) }))}
+                  className="px-3 py-2 rounded-lg outline-none"
+                  style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Κλείσιμο</label>
+                <select value={settings.close_hour ?? 25}
+                  onChange={(e) => setSettings((s) => ({ ...s, close_hour: Number(e.target.value) }))}
+                  className="px-3 py-2 rounded-lg outline-none"
+                  style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
+                  {Array.from({ length: 24 }, (_, i) => Number(settings.open_hour ?? 7) + i + 1).map((x) => (
+                    <option key={x} value={x}>
+                      {hourLabel(x)}{x >= 24 ? ' (επόμενη ημέρα)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={saveBusinessHours}
+                className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2" style={goldBtn}>
+                <Save size={16} /> Αποθήκευση
+              </button>
+            </div>
+
             <h3 className="font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Users size={18} /> Ελάχιστοι διανομείς ανά ζώνη
             </h3>
@@ -552,6 +696,19 @@ export default function Schedule() {
         )}
       </div>
 
+      {/* Τι μπήκε μόνο του — ο διαχειριστής δεν πρέπει να βρίσκει βάρδιες που
+          δεν έβαλε ο ίδιος χωρίς να ξέρει από πού ήρθαν. */}
+      {autoMerged.length > 0 && (
+        <div className="mb-6 p-3 rounded-lg text-xs flex items-start gap-2"
+          style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--text-secondary)', border: '1px solid var(--accent)' }}>
+          <CheckCircle2 size={15} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 1 }} />
+          <span>
+            Μπήκαν αυτόματα στο προσχέδιο οι δηλώσεις: <strong style={{ color: 'var(--text-primary)' }}>{autoMerged.join(', ')}</strong>.
+            {' '}Πάτησε <strong style={{ color: 'var(--text-primary)' }}>Αποθήκευση</strong> για να καταγραφούν.
+          </span>
+        </div>
+      )}
+
       {/* ── Σύνοψη: ποιοι δήλωσαν, πού είναι τα κενά ───────────────────── */}
       <div className="grid gap-4 md:grid-cols-2 mb-6">
         <div className="p-4" style={card}>
@@ -588,9 +745,10 @@ export default function Schedule() {
             <ul className="text-xs space-y-1 max-h-24 overflow-y-auto" style={{ color: 'var(--text-secondary)' }}>
               {gapRanges.map((g, i) => (
                 <li key={i}>
-                  <strong style={{ color: 'var(--danger)' }}>{DAYS[g.day]}</strong>{' '}
-                  {String(g.fromHour).padStart(2, '0')}:00–{String(g.toHour).padStart(2, '0')}:00 ·
-                  {' '}{g.have} από {g.need}
+                  <button onClick={() => setFocusDay(g.day)} className="text-left hover:underline">
+                    <strong style={{ color: 'var(--danger)' }}>{DAYS[g.day]}</strong>{' '}
+                    {hourLabel(g.fromHour)}–{hourLabel(g.toHour)} · {g.have} από {g.need}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -598,56 +756,137 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* ── Μπάρα κάλυψης 7 × 24 ───────────────────────────────────────── */}
+      {/* ── Επιλογή ημέρας ─────────────────────────────────────────────── */}
+      {/* «Δώσε την επιλογή να εξετάσεις την κάθε ημέρα ξεχωριστά γιατί έτσι
+          χάνεσαι» (πελάτης, 03/08/2026). Το πλέγμα της εβδομάδας μένει για την
+          πανοραμική· η ημέρα δείχνει ώρα-ώρα ΠΟΙΟΣ δουλεύει. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <button onClick={() => setFocusDay(null)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold"
+          style={focusDay === null
+            ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff' }
+            : btn}>
+          Όλη η εβδομάδα
+        </button>
+        {DAYS_SHORT.map((d, i) => {
+          const on = focusDay === i;
+          const dayGaps = gaps.filter((g) => g.day === i).length;
+          return (
+            <button key={d} onClick={() => setFocusDay(i)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5"
+              style={on
+                ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff' }
+                : btn}>
+              {d}
+              <span className="font-normal opacity-70">{Number(dates[i].slice(8))}/{Number(dates[i].slice(5, 7))}</span>
+              {dayGaps > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: on ? '#fff' : 'var(--danger)' }} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Κάλυψη ─────────────────────────────────────────────────────── */}
       <div className="p-4 mb-6 overflow-x-auto" style={card}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>
-          Κάλυψη ανά ώρα
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            {focusDay === null ? 'Κάλυψη ανά ώρα' : `Κάλυψη — ${DAYS[focusDay]}`}
+          </div>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Ωράριο {hourLabel(openHour)}–{hourLabel(closeHour)}
+          </div>
         </div>
-        <div style={{ minWidth: 640 }}>
-          <div className="flex items-center gap-1 mb-1 pl-12">
-            {Array.from({ length: 24 }, (_, h) => (
-              <div key={h} className="flex-1 text-center text-[9px]" style={{ color: 'var(--text-muted)' }}>
-                {h % 3 === 0 ? h : ''}
+
+        {focusDay === null ? (
+          <div style={{ minWidth: Math.max(420, hourCols.length * 26 + 48) }}>
+            <div className="flex items-center gap-1 mb-1 pl-12">
+              {hourCols.map((x) => (
+                <div key={x} className="flex-1 text-center text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                  {x % 2 === 0 ? x % 24 : ''}
+                </div>
+              ))}
+            </div>
+            {DAYS_SHORT.map((d, dayIndex) => (
+              <div key={d} className="flex items-center gap-1 mb-1">
+                <button onClick={() => setFocusDay(dayIndex)}
+                  className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  {d}
+                </button>
+                {hourCols.map((x) => {
+                  const have = coverage.counts[dayIndex][x];
+                  const need = coverage.minFor(dayIndex, x);
+                  const who = coverage.names[dayIndex][x];
+                  return (
+                    <button
+                      key={x}
+                      onClick={() => setFocusDay(dayIndex)}
+                      title={`${DAYS[dayIndex]} ${hourLabel(x)} — ${who.length ? who.join(', ') : 'κανείς'}${need ? ` (στόχος ${need})` : ''}`}
+                      className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
+                      style={{ ...hourStyle(dayIndex, x), border: '1px solid var(--border-subtle)' }}
+                    >
+                      {have || ''}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
-          {DAYS_SHORT.map((d, dayIndex) => (
-            <div key={d} className="flex items-center gap-1 mb-1">
-              <div className="w-11 text-[11px] font-bold shrink-0" style={{ color: 'var(--text-secondary)' }}>{d}</div>
-              {Array.from({ length: 24 }, (_, h) => {
-                const have = coverage.counts[dayIndex][h];
-                const need = coverage.minFor(dayIndex, h);
-                return (
-                  <div
-                    key={h}
-                    title={`${DAYS[dayIndex]} ${String(h).padStart(2, '0')}:00 — ${have} διανομείς${need ? ` (στόχος ${need})` : ''}`}
-                    className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
-                    style={{ ...hourStyle(dayIndex, h), border: '1px solid var(--border-subtle)' }}
-                  >
-                    {have || ''}
+        ) : (
+          // ── Μία ημέρα, ώρα-ώρα, ΜΕ ΟΝΟΜΑΤΑ ─────────────────────────────
+          <div className="space-y-1">
+            {hourCols.map((x) => {
+              const have = coverage.counts[focusDay][x];
+              const need = coverage.minFor(focusDay, x);
+              const who = coverage.names[focusDay][x];
+              const style = hourStyle(focusDay, x);
+              return (
+                <div key={x} className="flex items-center gap-3">
+                  <div className="w-14 text-xs font-bold shrink-0 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                    {hourLabel(x)}
                   </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+                  <div className="w-11 h-6 rounded flex items-center justify-center text-[11px] font-bold shrink-0"
+                       style={{ ...style, border: '1px solid var(--border-subtle)' }}>
+                    {need ? `${have}/${need}` : have || ''}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 min-w-0">
+                    {who.length ? who.map((n) => (
+                      // Χρυσό κείμενο πάνω σε χρυσό φόντο δίνει contrast 2.2 στο
+                      // ανοιχτό θέμα — τα ονόματα είναι ΤΟ ζητούμενο εδώ, οπότε
+                      // παίρνουν το κανονικό χρώμα κειμένου.
+                      <span key={n} className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
+                            style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--text-primary)' }}>
+                        {n}
+                      </span>
+                    )) : (
+                      <span className="text-[11px]" style={{ color: need ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        {need ? 'ακάλυπτη ώρα' : 'κανείς'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Πίνακας: διανομείς × ημέρες ────────────────────────────────── */}
       <div style={card} className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 980 }}>
+          <table className="w-full text-sm" style={{ minWidth: focusDay === null ? 980 : 420 }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-tertiary)' }}>
                 <th className="px-4 py-3 text-left font-bold text-xs uppercase tracking-wider sticky left-0"
                     style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)' }}>
                   Διανομέας
                 </th>
-                {dates.map((date, i) => (
-                  <th key={date} className="px-2 py-3 font-bold text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    <div>{DAYS_SHORT[i]}</div>
+                {visibleDays.map((i) => (
+                  <th key={dates[i]} className="px-2 py-3 font-bold text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <div>{focusDay === null ? DAYS_SHORT[i] : DAYS[i]}</div>
                     <div className="font-normal text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      {Number(date.slice(8))}/{Number(date.slice(5, 7))}
+                      {Number(dates[i].slice(8))}/{Number(dates[i].slice(5, 7))}
                     </div>
                   </th>
                 ))}
@@ -655,10 +894,10 @@ export default function Schedule() {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</td></tr>
+                <tr><td colSpan={visibleDays.length + 1} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</td></tr>
               )}
               {!loading && !drivers.length && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                <tr><td colSpan={visibleDays.length + 1} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
                   Δεν υπάρχουν διανομείς.
                 </td></tr>
               )}
@@ -673,7 +912,8 @@ export default function Schedule() {
                     </div>
                   </td>
 
-                  {dates.map((date) => {
+                  {visibleDays.map((dayIndex) => {
+                    const date = dates[dayIndex];
                     const slots = draft[driver.id]?.[date] || [];
                     const declared = availability[driver.id]?.[date] || [];
                     return (
@@ -749,10 +989,13 @@ export default function Schedule() {
 
       <div className="mt-4 p-4 text-xs leading-relaxed" style={{ ...card, color: 'var(--text-secondary)' }}>
         <strong style={{ color: 'var(--text-primary)' }}>Πώς δουλεύει:</strong> οι διανομείς δηλώνουν από την
-        εφαρμογή πότε μπορούν να δουλέψουν την επόμενη εβδομάδα. Το κουμπί «Αυτόματη κατάρτιση» αντιγράφει
-        αυτούσιες τις δηλώσεις σε προσχέδιο — δεν αποφασίζει, απλώς σου δίνει την αφετηρία. Ό,τι αλλάξεις με το
-        χέρι σημειώνεται με γεμάτο χρυσό. Με τη <strong>Δημοσίευση</strong> το πρόγραμμα γίνεται ορατό στους
-        διανομείς («Το πρόγραμμά μου») και κλειδώνουν οι δηλώσεις της εβδομάδας.
+        εφαρμογή πότε μπορούν να δουλέψουν την επόμενη εβδομάδα, και η δήλωσή τους μπαίνει{' '}
+        <strong style={{ color: 'var(--text-primary)' }}>μόνη της στο προσχέδιο</strong> — δεν εγκρίνεις τίποτα.
+        Ό,τι αλλάξεις με το χέρι σημειώνεται με γεμάτο χρυσό και δεν το πατάει καμία νέα δήλωση· αν ο διανομέας
+        ξαναδηλώσει μετά την τελευταία σου αποθήκευση, το νέο του ωράριο μπαίνει στις ημέρες που εσύ έχεις αφήσει
+        κενές. Το κουμπί «Επαναφορά από δηλώσεις» ξαναχτίζει το προσχέδιο από το μηδέν. Με τη{' '}
+        <strong>Δημοσίευση</strong> το πρόγραμμα γίνεται ορατό στους διανομείς («Το πρόγραμμά μου») και κλειδώνουν
+        οι δηλώσεις της εβδομάδας.
       </div>
     </div>
   );
