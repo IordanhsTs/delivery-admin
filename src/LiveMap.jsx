@@ -822,16 +822,28 @@ export default function LiveMap() {
                     <span className="font-bold text-[var(--map-green)] block text-[10px] uppercase tracking-wider mb-1">
                       Σε διανομή ({driverActiveOrders.length}):
                     </span>
-                    {driverActiveOrders.map(order => (
-                      // Σταθερά ανοιχτόχρωμα (όχι text-adaptive/-light): το premium-tooltip
-                      // έχει πάντα μαύρο φόντο, ανεξαρτήτως theme — σε light mode το
-                      // "έξυπνο" σκούρο κείμενο του text-adaptive γινόταν σχεδόν αόρατο.
-                      <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
-                        <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
-                        <span className="text-slate-400 mx-0.5">➔</span>
-                        <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
-                      </div>
-                    ))}
+                    {driverActiveOrders.map(order => {
+                      // Πόσα λεπτά πριν αποδέχτηκε ΑΥΤΗΝ την παραγγελία ο διανομέας —
+                      // ίδιος υπολογισμός με το «αποδεκτή» χρόνο της δεξιάς στήλης.
+                      const { acceptedMins } = orderDurations(order, currentTime);
+                      return (
+                        // Σταθερά ανοιχτόχρωμα (όχι text-adaptive/-light): το premium-tooltip
+                        // έχει πάντα μαύρο φόντο, ανεξαρτήτως theme — σε light mode το
+                        // "έξυπνο" σκούρο κείμενο του text-adaptive γινόταν σχεδόν αόρατο.
+                        <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
+                          <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
+                          <span className="text-slate-400 mx-0.5">➔</span>
+                          <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
+                          <span
+                            className="flex items-center gap-0.5 shrink-0 font-bold ml-0.5"
+                            style={{ color: 'var(--map-green)' }}
+                            title="Χρόνος από την αποδοχή της παραγγελίας"
+                          >
+                            <Clock size={10} /> {acceptedMins}′
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               } else {
@@ -1122,26 +1134,31 @@ export default function LiveMap() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.96 }}
                     transition={{ duration: 0.18 }}
-                    className="rounded-lg p-2.5 mb-2 last:mb-0 text-[13px]"
+                    className="rounded-lg px-2.5 py-2 mb-2 last:mb-0 text-[13px]"
                     style={railCardStyle('var(--success)')}
                   >
-                    <div className="flex items-center gap-1 flex-wrap leading-relaxed">
+                    {/* Ζευγάρι: κατάστημα → διεύθυνση (βασική πληροφορία, πρώτη στην ιεραρχία) */}
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <OrderNumber n={idx + 1} />
-                      <Building size={12} style={{ color: 'var(--text-muted)' }} />
-                      <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>➔</span>
-                      <MapPin size={12} style={{ color: 'var(--text-muted)' }} />
-                      <span style={{ color: 'var(--text-secondary)' }}>{order.address}</span>
-                      <DistanceChip order={order} />
-                      {order.picked_up_at && (
-                        <span
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                          style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
-                          title="Ο διανομέας έχει παραλάβει την παραγγελία από το κατάστημα"
-                        >
-                          <Package size={10} /> Παρελήφθη
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        <Building size={11} className="shrink-0" style={{ color: 'var(--text-muted)', opacity: 0.6 }} />
+                        <span className="font-extrabold shrink-0" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
+                        <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>➔</span>
+                        <MapPin size={11} className="shrink-0" style={{ color: 'var(--text-muted)', opacity: 0.6 }} />
+                        <span className="truncate" style={{ color: 'var(--text-secondary)' }} title={order.address}>{order.address}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <DistanceChip order={order} />
+                        {order.picked_up_at && (
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                            style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
+                            title="Ο διανομέας έχει παραλάβει την παραγγελία από το κατάστημα"
+                          >
+                            <Package size={10} /> Παρελήφθη
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {order.comments && (
@@ -1154,49 +1171,54 @@ export default function LiveMap() {
                       </div>
                     )}
 
+                    {/* Διανομέας ↔ ενιαία κάψουλα χρόνου (score) */}
                     <div className="flex items-center justify-between gap-2 mt-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <User size={12} className="shrink-0" style={{ color: 'var(--success)' }} />
+                        <span className="font-semibold truncate text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{order.drivers?.full_name}</span>
+                      </div>
                       <div
-                        className="text-[11px] px-2 py-1 rounded-md inline-flex items-center gap-1"
-                        style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
+                        className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md"
+                        style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                        title={`Ενεργή ${activeMins} λ. (μέχρι την αποδοχή) + αποδεκτή ${acceptedMins} λ. = ${totalMins} λ. συνολικά`}
                       >
-                        <User size={12} /> <b>{order.drivers?.full_name}</b>
+                        <Clock size={11} style={{ color: 'var(--text-muted)' }} />
+                        <span className="text-[13.5px] font-black tabular-nums leading-none" style={{ color: 'var(--text-primary)' }}>{activeMins}</span>
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>′+</span>
+                        <span className="text-[13.5px] font-black tabular-nums leading-none" style={{ color: 'var(--text-primary)' }}>{acceptedMins}</span>
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>′</span>
                       </div>
+                    </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="text-[11px] font-bold px-2 py-1 rounded-md flex items-center gap-1 tabular-nums"
-                          style={{ color: 'var(--accent)', backgroundColor: 'var(--accent-muted)', border: '1px solid var(--border-subtle)' }}
-                          title={`Ενεργή ${activeMins} λ. (μέχρι την αποδοχή) + αποδεκτή ${acceptedMins} λ. = ${totalMins} λ. συνολικά`}
-                        >
-                          <Clock size={12} /> {activeMins}′ + {acceptedMins}′
-                        </span>
-                        <button
-                          onClick={() => setReassigningOrderId(reassigningOrderId === order.id ? null : order.id)}
-                          className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all flex items-center justify-center"
-                          style={reassigningOrderId === order.id
-                            ? { color: '#fff', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
-                            : { color: 'var(--accent)', backgroundColor: 'var(--accent-muted)', border: '1px solid var(--border-subtle)' }}
-                          title="Μετάθεση σε άλλον διανομέα"
-                        >
-                          <Repeat size={14} />
-                        </button>
-                        <button
-                          onClick={() => completeOrder(order.id)}
-                          className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all flex items-center justify-center"
-                          style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
-                          title="Ολοκλήρωση Παραγγελίας"
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          onClick={() => cancelOrder(order.id)}
-                          className="py-1.5 px-2.5 rounded-lg cursor-pointer font-bold text-sm transition-all flex items-center justify-center"
-                          style={{ color: 'var(--danger)', backgroundColor: 'var(--danger-bg)', border: '1px solid var(--danger-border)' }}
-                          title="Ακύρωση Παραγγελίας"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
+                    {/* Ενέργειες: κοινό μέγεθος/spacing· swap secondary, ✓/✕ πιο έντονα */}
+                    <div className="flex items-center justify-end gap-1.5 mt-2">
+                      <button
+                        onClick={() => setReassigningOrderId(reassigningOrderId === order.id ? null : order.id)}
+                        className="w-[30px] h-[30px] rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
+                        style={reassigningOrderId === order.id
+                          ? { color: '#fff', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
+                          : { color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)' }}
+                        title="Μετάθεση σε άλλον διανομέα"
+                      >
+                        <Repeat size={14} />
+                      </button>
+                      <span className="w-px self-stretch my-0.5" style={{ backgroundColor: 'var(--border-subtle)' }} />
+                      <button
+                        onClick={() => completeOrder(order.id)}
+                        className="w-[30px] h-[30px] rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
+                        style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
+                        title="Ολοκλήρωση Παραγγελίας"
+                      >
+                        <Check size={15} />
+                      </button>
+                      <button
+                        onClick={() => cancelOrder(order.id)}
+                        className="w-[30px] h-[30px] rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
+                        style={{ color: 'var(--danger)', backgroundColor: 'var(--danger-bg)', border: '1px solid var(--danger-border)' }}
+                        title="Ακύρωση Παραγγελίας"
+                      >
+                        <X size={15} />
+                      </button>
                     </div>
 
                     {/* Επιλογή νέου διανομέα για μετάθεση */}
