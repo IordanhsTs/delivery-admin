@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
 import BillingDashboard from './BillingDashboard';
 import FuelReport from './FuelReport';
+import FleetVehicles from './FleetVehicles';
 import Schedule from './Schedule';
 import Announcements from './Announcements';
 import LiveMap from './LiveMap';
@@ -135,6 +136,15 @@ const MegaphoneIcon = () => (
   </svg>
 );
 
+const BikeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/>
+    <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+    <path d="M12 17.5V14l-3-3 4-3 2 3h2"/>
+  </svg>
+);
+
 const NAV_ITEMS = [
   { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
   { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
@@ -144,6 +154,7 @@ const NAV_ITEMS = [
   { id: 'announcements',Icon: MegaphoneIcon, shortLabel: 'Ανακοιν.',  fullLabel: 'Ανακοινώσεις' },
   { id: 'billing',      Icon: ReceiptIcon,  shortLabel: 'Εκκαθάριση', fullLabel: 'Εκκαθάριση' },
   { id: 'fuel',         Icon: FuelIcon,     shortLabel: 'Καύσιμα',    fullLabel: 'Χιλιόμετρα & Καύσιμα' },
+  { id: 'fleet',        Icon: BikeIcon,     shortLabel: 'Μηχανές',    fullLabel: 'Στόλος μηχανών' },
   { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
   { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
 ];
@@ -163,6 +174,7 @@ const VIEW_COMPONENTS = {
   'announcements': <Announcements />,
   'billing':       <BillingDashboard />,
   'fuel':          <FuelReport />,
+  'fleet':         <FleetVehicles />,
   'stores':        <StoreManagement />,
   'stats':         <Statistics />,
 };
