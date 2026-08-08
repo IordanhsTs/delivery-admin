@@ -326,6 +326,13 @@ function StoreCard({ store, index, onEdit }) {
             <span className="flex items-center gap-1.5 truncate" title={store.email || ''}>
               <Mail size={12} /> {store.email || '—'}
             </span>
+            {/* Η διεύθυνση που βλέπει ο διανομέας στην κάρτα της παραγγελίας.
+                Φαίνεται εδώ ΚΑΙ όταν λείπει, για να εντοπίζεται με μια ματιά
+                ποιο κατάστημα δεν την έχει συμπληρωμένη. */}
+            <span className="flex items-center gap-1.5 truncate" title={store.address || ''}
+                  style={store.address ? undefined : { color: 'var(--text-muted)' }}>
+              <MapPin size={12} /> {store.address || 'Χωρίς διεύθυνση'}
+            </span>
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -477,6 +484,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
   const [form, setForm] = useState(() => ({
     name: store.name || '',
     phone: store.phone || '',
+    address: store.address || '',
     delivery_fee: store.delivery_fee ?? '',
     latitude: store.latitude ?? '',
     longitude: store.longitude ?? '',
@@ -516,6 +524,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
     const { error } = await supabase.from('stores').update({
       name: form.name.trim(),
       phone: form.phone.trim() || null,
+      address: form.address.trim() || null,
       delivery_fee: fee,
       latitude: lat,
       longitude: lng,
@@ -572,11 +581,16 @@ function StoreDrawer({ store, onClose, onChanged }) {
           <MapPin size={16} /> Θέση στον χάρτη
         </h3>
 
-        {store.address ? (
-          <p className="text-xs m-0" style={{ color: 'var(--text-muted)' }}>
-            Διεύθυνση: <span style={{ color: 'var(--text-secondary)' }}>{store.address}</span>
-          </p>
-        ) : null}
+        {/* Η διεύθυνση είναι ΜΟΝΟ κείμενο για τα μάτια του διανομέα — εμφανίζεται
+            στην κάρτα της παραγγελίας ως «Κοντοπούλου 4 → διεύθυνση πελάτη».
+            ΔΕΝ γεωκωδικοποιείται και ΔΕΝ μπαίνει στον υπολογισμό απόστασης· η
+            θέση του καταστήματος παραμένει οι συντεταγμένες από κάτω. */}
+        <Field label="Διεύθυνση (εμφανίζεται στους διανομείς)"
+               hint="Ελεύθερο κείμενο, π.χ. «Κοντοπούλου 4». Δεν επηρεάζει την απόσταση ή τη χρέωση — αυτές βγαίνουν από τις συντεταγμένες.">
+          <input value={form.address} onChange={(e) => set('address', e.target.value)}
+            placeholder="π.χ. Κοντοπούλου 4"
+            className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Πλάτος (lat)">
