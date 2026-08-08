@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
+import { STORE_CATEGORIES } from './storeCategories';
 
 // ── Καταστήματα & διανομείς σε καρτέλες (αίτημα πελάτη 08/08/2026) ───────────
 // Ίδια γλώσσα με τον «Στόλο μηχανών»: πλέγμα από τετράγωνες κάρτες, ένα κουμπί
@@ -488,6 +489,10 @@ function StoreDrawer({ store, onClose, onChanged }) {
     delivery_fee: store.delivery_fee ?? '',
     latitude: store.latitude ?? '',
     longitude: store.longitude ?? '',
+    category: store.category || '',
+    owner_phone: store.owner_phone || '',
+    owner_email: store.owner_email || '',
+    owner_afm: store.owner_afm || '',
   }));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -528,6 +533,10 @@ function StoreDrawer({ store, onClose, onChanged }) {
       delivery_fee: fee,
       latitude: lat,
       longitude: lng,
+      category: form.category || null,
+      owner_phone: form.owner_phone.trim() || null,
+      owner_email: form.owner_email.trim() || null,
+      owner_afm: form.owner_afm.trim() || null,
     }).eq('id', store.id);
     setSaving(false);
 
@@ -569,9 +578,47 @@ function StoreDrawer({ store, onClose, onChanged }) {
           </div>
         </Field>
 
-        <Field label="Χρέωση ανά παραγγελία (€)">
-          <input type="number" step="0.10" min="0" value={form.delivery_fee}
-            onChange={(e) => set('delivery_fee', e.target.value)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Χρέωση ανά παραγγελία (€)">
+            <input type="number" step="0.10" min="0" value={form.delivery_fee}
+              onChange={(e) => set('delivery_fee', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+          </Field>
+          {/* Καθαρά οργανωτικό/στατιστικό πεδίο (client feedback 08/08) — ΔΕΝ
+              επηρεάζει την τιμολόγηση, αυτή μένει όπως ήταν. */}
+          <Field label="Είδος καταστήματος">
+            <select value={form.category} onChange={(e) => set('category', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg outline-none text-sm cursor-pointer" style={inputStyle}>
+              <option value="">— Χωρίς κατηγορία —</option>
+              {STORE_CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>{cat.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </section>
+
+      <section className="p-4 space-y-4" style={cardStyle}>
+        <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
+          <Lock size={16} /> Προσωπικά στοιχεία ιδιοκτήτη
+        </h3>
+        <p className="text-[11px] m-0 leading-snug" style={{ color: 'var(--text-muted)' }}>
+          Ορατά μόνο εδώ, στο admin panel — ξεχωριστά από το τηλέφωνο/email του
+          καταστήματος από πάνω.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Προσωπικό τηλέφωνο">
+            <input value={form.owner_phone} onChange={(e) => set('owner_phone', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+          </Field>
+          <Field label="Προσωπικό email">
+            <input type="email" value={form.owner_email} onChange={(e) => set('owner_email', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+          </Field>
+        </div>
+        <Field label="ΑΦΜ">
+          <input value={form.owner_afm} onChange={(e) => set('owner_afm', e.target.value)}
             className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
         </Field>
       </section>
@@ -736,7 +783,7 @@ function CourierDrawer({ courier, now, onClose, onChanged }) {
 // ════════════════════════════════════════════════════════════════════════════
 function CreateDrawer({ kind, onClose, onCreated }) {
   const isStore = kind === 'store';
-  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', fee: '' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', fee: '', category: '' });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -755,7 +802,10 @@ function CreateDrawer({ kind, onClose, onCreated }) {
       name: form.name.trim(),
       phone: form.phone.trim(),
     };
-    if (isStore) body.fee = parseFloat(String(form.fee).replace(',', '.')) || 0;
+    if (isStore) {
+      body.fee = parseFloat(String(form.fee).replace(',', '.')) || 0;
+      body.category = form.category || null;
+    }
 
     const { data, error } = await supabase.functions.invoke('create-user-admin', { body });
     setSaving(false);
@@ -796,11 +846,22 @@ function CreateDrawer({ kind, onClose, onCreated }) {
               className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} required />
           </Field>
           {isStore ? (
-            <Field label="Χρέωση ανά παραγγελία (€)">
-              <input type="number" step="0.10" min="0" value={form.fee}
-                onChange={(e) => set('fee', e.target.value)} placeholder="π.χ. 1.50"
-                className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
-            </Field>
+            <>
+              <Field label="Χρέωση ανά παραγγελία (€)">
+                <input type="number" step="0.10" min="0" value={form.fee}
+                  onChange={(e) => set('fee', e.target.value)} placeholder="π.χ. 1.50"
+                  className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+              </Field>
+              <Field label="Είδος καταστήματος">
+                <select value={form.category} onChange={(e) => set('category', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg outline-none text-sm cursor-pointer" style={inputStyle}>
+                  <option value="">— Χωρίς κατηγορία —</option>
+                  {STORE_CATEGORIES.map((cat) => (
+                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                  ))}
+                </select>
+              </Field>
+            </>
           ) : null}
         </section>
 

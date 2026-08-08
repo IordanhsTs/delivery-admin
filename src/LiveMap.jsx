@@ -184,7 +184,7 @@ const NOW_LOAD_STYLE = {
   high: { tint: 'var(--danger)',     bg: 'var(--danger-bg)',   border: 'var(--danger-border)' },
 };
 
-// ── Ενότητα της δεξιάς στήλης (Εκκρεμείς / Ενεργές / Διανομείς) ──────────────
+// ── Ενότητα της δεξιάς στήλης (Ενεργές / Αποδεκτές / Διανομείς) ──────────────
 // Ξεχωριστή κάρτα ανά ενότητα, με κουμπί σύμπτυξης: με 8 διανομείς σε βάρδια η
 // στήλη γίνεται πολύ μακριά, οπότε ο διαχειριστής μαζεύει ό,τι δεν κοιτά.
 function RailSection({ Icon, title, count, tint, children }) {
@@ -995,8 +995,8 @@ export default function LiveMap() {
             </RailSection>
           )}
 
-          {/* Εκκρεμείς */}
-          <RailSection Icon={Package} title="Εκκρεμείς" count={pendingOrders.length} tint="var(--accent)">
+          {/* Εκκρεμείς→Ενεργές (client feedback 08/08: μετονομασία καρτελών) */}
+          <RailSection Icon={Package} title="Ενεργές" count={pendingOrders.length} tint="var(--accent)">
             {pendingOrders.length === 0 ? (
               <RailEmpty Icon={CheckCircle2}>Καμία εκκρεμής — όλα καθαρά</RailEmpty>
             ) : (
@@ -1116,8 +1116,8 @@ export default function LiveMap() {
             )}
           </RailSection>
 
-          {/* Ενεργές */}
-          <RailSection Icon={Bike} title="Ενεργές" count={acceptedOrders.length} tint="var(--success)">
+          {/* Ενεργές→Αποδεκτές (client feedback 08/08: μετονομασία καρτελών) */}
+          <RailSection Icon={Bike} title="Αποδεκτές" count={acceptedOrders.length} tint="var(--success)">
             {acceptedOrders.length === 0 ? (
               <RailEmpty>Καμία ενεργή διανομή αυτή τη στιγμή</RailEmpty>
             ) : (
@@ -1126,7 +1126,13 @@ export default function LiveMap() {
                   // Οι ΔΥΟ χρόνοι που ζήτησε ο πελάτης: πόση ώρα ήταν «ενεργή»
                   // (πριν την πάρει διανομέας) και πόση είναι «αποδεκτή» — ώστε να
                   // βγαίνει ο πραγματικός συνολικός χρόνος της παραγγελίας.
-                  const { activeMins, acceptedMins, totalMins } = orderDurations(order, currentTime);
+                  const { activeMins, acceptedMins } = orderDurations(order, currentTime);
+                  // Λεπτά από την παραλαβή (client feedback 08/08 — τρίτο κουτάκι):
+                  // δεν υπάρχει έτοιμο helper όπως το orderDurations γιατί μέχρι τώρα
+                  // δεν χρειαζόταν πουθενά αλλού αυτός ο χρόνος ξεχωριστά.
+                  const pickedUpMins = order.picked_up_at
+                    ? Math.max(0, Math.floor(((order.completed_at ? new Date(order.completed_at) : currentTime) - new Date(order.picked_up_at)) / 60000))
+                    : null;
                   return (
                   <motion.div
                     key={order.id}
@@ -1149,15 +1155,6 @@ export default function LiveMap() {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <DistanceChip order={order} />
-                        {order.picked_up_at && (
-                          <span
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                            style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
-                            title="Ο διανομέας έχει παραλάβει την παραγγελία από το κατάστημα"
-                          >
-                            <Package size={10} /> Παρελήφθη
-                          </span>
-                        )}
                       </div>
                     </div>
 
@@ -1171,22 +1168,44 @@ export default function LiveMap() {
                       </div>
                     )}
 
-                    {/* Διανομέας ↔ ενιαία κάψουλα χρόνου (score) */}
-                    <div className="flex items-center justify-between gap-2 mt-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <User size={12} className="shrink-0" style={{ color: 'var(--success)' }} />
-                        <span className="font-semibold truncate text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{order.drivers?.full_name}</span>
+                    {/* Διανομέας */}
+                    <div className="flex items-center gap-1.5 min-w-0 mt-1.5">
+                      <User size={12} className="shrink-0" style={{ color: 'var(--success)' }} />
+                      <span className="font-semibold truncate text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{order.drivers?.full_name}</span>
+                    </div>
+
+                    {/* 3 κουτάκια κατάστασης (client feedback 08/08): πορτοκαλί=Ενεργή
+                        (δημιουργία→αποδοχή), μπλε=Αποδεκτή (αποδοχή→παραλαβή/τώρα),
+                        πράσινη=Παρελήφθη (παραλαβή→τώρα) — τα λεπτά μέσα σε κάθε κουτάκι.
+                        Η πράσινη μένει «κενή» μέχρι να παραλάβει ο διανομέας. */}
+                    <div className="flex items-center gap-1 mt-1.5">
+                      <div
+                        className="flex-1 flex flex-col items-center py-1 rounded-md"
+                        style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid var(--accent)' }}
+                        title={`Ενεργή: ${activeMins} λ. (από τη δημιουργία μέχρι την αποδοχή)`}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>Ενεργή</span>
+                        <span className="text-[13px] font-black tabular-nums leading-none" style={{ color: 'var(--accent)' }}>{activeMins}′</span>
                       </div>
                       <div
-                        className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md"
-                        style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
-                        title={`Ενεργή ${activeMins} λ. (μέχρι την αποδοχή) + αποδεκτή ${acceptedMins} λ. = ${totalMins} λ. συνολικά`}
+                        className="flex-1 flex flex-col items-center py-1 rounded-md"
+                        style={{ backgroundColor: 'var(--info-bg)', border: '1px solid var(--info)' }}
+                        title={`Αποδεκτή: ${acceptedMins} λ. (από την αποδοχή μέχρι ${order.picked_up_at ? 'την παραλαβή' : 'τώρα'})`}
                       >
-                        <Clock size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span className="text-[13.5px] font-black tabular-nums leading-none" style={{ color: 'var(--text-primary)' }}>{activeMins}</span>
-                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>′+</span>
-                        <span className="text-[13.5px] font-black tabular-nums leading-none" style={{ color: 'var(--text-primary)' }}>{acceptedMins}</span>
-                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>′</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--info)' }}>Αποδεκτή</span>
+                        <span className="text-[13px] font-black tabular-nums leading-none" style={{ color: 'var(--info)' }}>{acceptedMins}′</span>
+                      </div>
+                      <div
+                        className="flex-1 flex flex-col items-center py-1 rounded-md"
+                        style={order.picked_up_at
+                          ? { backgroundColor: 'var(--success-bg)', border: '1px solid var(--success)' }
+                          : { backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', opacity: 0.5 }}
+                        title={order.picked_up_at ? `Παρελήφθη: ${pickedUpMins} λ. (από την παραλαβή μέχρι τώρα)` : 'Δεν έχει παραληφθεί ακόμα από το κατάστημα'}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: order.picked_up_at ? 'var(--success)' : 'var(--text-muted)' }}>Παρελήφθη</span>
+                        <span className="text-[13px] font-black tabular-nums leading-none" style={{ color: order.picked_up_at ? 'var(--success)' : 'var(--text-muted)' }}>
+                          {order.picked_up_at ? `${pickedUpMins}′` : '—'}
+                        </span>
                       </div>
                     </div>
 

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { formatKm, orderDurations } from './distance';
+import { STORE_CATEGORIES } from './storeCategories';
 
 export default function Statistics() {
   const [orders, setOrders] = useState([]);
@@ -18,6 +19,10 @@ export default function Statistics() {
   // Επιλεγμένα Φίλτρα
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
+  // Είδος καταστήματος (client feedback 08/08): «διάλεξε διανομέα + κατηγορία,
+  // δες πόσες παραγγελίες έκανε, από ποια καταστήματα» — ίδιο μηχανισμό με τα
+  // υπάρχοντα φίλτρα store/driver, τρίτο κριτήριο πάνω στο ήδη κοινό ερώτημα.
+  const [selectedCategory, setSelectedCategory] = useState('');
 
   // Βοηθητική συνάρτηση για το format YYYY-MM-DDTHH:mm
   const formatDateTimeLocal = (date) => {
@@ -58,10 +63,13 @@ export default function Statistics() {
     const startIso = new Date(startDate).toISOString();
     const endIso = new Date(endDate).toISOString();
 
-    // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό
+    // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό.
+    // stores!inner (αντί για stores ( )): client feedback 08/08 — τρίτο φίλτρο
+    // «είδος καταστήματος». Το PostgREST φιλτράρει σε embedded στήλη (stores.category)
+    // μόνο με inner join· ακίνδυνο αφού κάθε παραγγελία έχει πάντα κατάστημα.
     let query = supabase
       .from('orders')
-      .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores ( name ), drivers ( full_name )')
+      .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores!inner ( name, category ), drivers ( full_name )')
       .eq('status', 'completed')
       .gte('created_at', startIso)
       .lte('created_at', endIso)
@@ -69,6 +77,7 @@ export default function Statistics() {
 
     if (selectedStore) query = query.eq('store_id', selectedStore);
     if (selectedDriver) query = query.eq('driver_id', selectedDriver);
+    if (selectedCategory) query = query.eq('stores.category', selectedCategory);
 
     const { data, error } = await query;
 
@@ -155,7 +164,7 @@ export default function Statistics() {
       </div>
 
       {/* Πίνακας Ελέγχου (Φίλτρα) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 items-end shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 items-end shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
         
         <div className="flex flex-col gap-1.5 lg:col-span-1">
           <label className="text-xs font-bold text-[#C5A066]">Από</label>
@@ -205,9 +214,23 @@ export default function Statistics() {
           </select>
         </div>
 
+        <div className="flex flex-col gap-1.5 lg:col-span-1">
+          <label className="text-xs font-bold text-[#C5A066]">Είδος</label>
+          <select
+            value={selectedCategory}
+            onChange={e => setSelectedCategory(e.target.value)}
+            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm cursor-pointer"
+          >
+            <option value="">Όλα τα είδη</option>
+            {STORE_CATEGORIES.map(cat => (
+              <option key={cat.value} value={cat.value}>{cat.label}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="lg:col-span-1 flex justify-center lg:justify-end">
-          <button 
-            onClick={fetchStats} 
+          <button
+            onClick={fetchStats}
             disabled={loading} 
             className="w-full sm:w-auto px-8 lg:px-6 py-2.5 btn-glass text-[#C5A066] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] rounded-xl cursor-pointer font-bold transition-all disabled:opacity-50 h-[42px] flex items-center justify-center gap-2"
           >
