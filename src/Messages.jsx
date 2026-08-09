@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { pushFailureReason } from './pushErrors';
 import { Megaphone, Send, ChevronDown } from 'lucide-react';
@@ -31,6 +31,11 @@ export default function Messages() {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [broadcastChannel, setBroadcastChannel] = useState(null);
+  // Το `disabled={loading}` στο κουμπί δεν προλαβαίνει ένα γρήγορο διπλό κλικ πριν
+  // ξαναγίνει render — δύο ταυτόχρονες κλήσεις functions.invoke() με το ίδιο token
+  // υπό ανανέωση μπορεί η μία να πετύχει (φτάνει το push) και η άλλη να πέσει σε 401,
+  // δείχνοντας σφάλμα ενώ το μήνυμα ήδη παραδόθηκε. Το ref μπλοκάρει συγχρονισμένα.
+  const sendingRef = useRef(false);
 
   useEffect(() => {
     async function fetchEntities() {
@@ -58,6 +63,7 @@ export default function Messages() {
 
   const handleSend = async (e) => {
     e.preventDefault();
+    if (sendingRef.current) return;
     if (!message.trim()) {
       toast.error('Παρακαλώ πληκτρολογήστε ένα μήνυμα.');
       return;
@@ -67,6 +73,7 @@ export default function Messages() {
       return;
     }
 
+    sendingRef.current = true;
     setLoading(true);
 
     try {
@@ -121,6 +128,7 @@ export default function Messages() {
       toast.error('Παρουσιάστηκε σφάλμα κατά την αποστολή.');
     } finally {
       setLoading(false);
+      sendingRef.current = false;
     }
   };
 
