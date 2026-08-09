@@ -269,8 +269,11 @@ function DriverStripCard({ driver, dotColor, subText, subColor, battery, signalT
         <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ backgroundColor: dotColor }} />
         <span className="text-[12px] leading-tight truncate" style={{ color: subColor }}>{subText}</span>
         {battery && (
+          // mr-1.5: με σκέτο το gap-1.5 της γραμμής, μπαταρία και παραδόσεις είχαν
+          // 6px μεταξύ τους ενώ οι παραδόσεις απέχουν 11px από την άκρη της κάρτας
+          // — φαίνονταν κολλητά. Τα 12px τα ξεχωρίζουν σαν δύο ξεχωριστές τιμές.
           <span
-            className="ml-auto shrink-0 flex items-center gap-0.5 text-[11px] font-bold tabular-nums"
+            className="ml-auto mr-1.5 shrink-0 flex items-center gap-0.5 text-[11px] font-bold tabular-nums"
             style={{ color: battery.color }}
           >
             <battery.Icon size={12} /> {driver.battery_level}%
