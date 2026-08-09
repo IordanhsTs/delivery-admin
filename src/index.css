@@ -336,6 +336,24 @@ html.dark .hover-row-glass:hover {
   background-color: #F1F5F9 !important;
 }
 
+/* Sidebar πλοήγησης (App.jsx) — χρυσό φόντο με μαύρα γράμματα σε desktop, ώστε να
+   ξεχωρίζει καθαρά από τον χάρτη/περιεχόμενο δίπλα του αντί να «ενώνεται» μαζί του
+   (client feedback 08-09). Ίδιο fixed look σε light ΚΑΙ dark mode (δεν αλλάζει με
+   το θέμα), ακριβώς όπως το --bg-card παρέμενε πάντα άσπρο πριν. Μόνο md+ (desktop) —
+   στο mobile η πάνω μπάρα μένει όπως ήταν. */
+@media (min-width: 768px) {
+  .sidebar-gold {
+    background: #C5A066 !important;
+    --text-primary:   #1E1A14 !important;
+    --text-secondary: #1E1A14 !important;
+    --text-muted:     #3A3128 !important;
+    --border-default: rgba(30,26,20,0.20) !important;
+    --accent:         #1E1A14 !important;
+    --accent-hover:   #2A2520 !important;
+    --accent-muted:   rgba(30,26,20,0.14) !important;
+  }
+}
+
 /* Fix for date picker icon in dark mode */
 
 

@@ -325,7 +325,7 @@ export default function App() {
           SIDEBAR
       ══════════════════════════════ */}
       <div
-        className="w-full md:w-64 shrink-0 flex flex-col z-10 border-r card-surface"
+        className="w-full md:w-64 shrink-0 flex flex-col z-10 border-r card-surface sidebar-gold"
         style={{
           backgroundColor: 'var(--bg-card)',
           borderColor: 'var(--border-default)',
