@@ -100,7 +100,7 @@ export default function Login({ onLogin }) {
 
       {/* Card */}
       <div
-        className="w-full max-w-md relative animate-scale-in overflow-hidden"
+        className="w-full max-w-md relative animate-scale-in overflow-hidden card-surface"
         style={{
           backgroundColor: 'var(--bg-card)',
           border: '1px solid var(--border-default)',

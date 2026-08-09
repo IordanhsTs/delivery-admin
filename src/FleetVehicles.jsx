@@ -234,9 +234,9 @@ export default function FleetVehicles() {
 
       {/* ── Οι μηχανές ──────────────────────────────────────────────────── */}
       {loading && !rows.length ? (
-        <div className="p-10 text-center" style={{ ...cardStyle, color: 'var(--text-muted)' }}>Φόρτωση…</div>
+        <div className="p-10 text-center card-surface" style={{ ...cardStyle, color: 'var(--text-muted)' }}>Φόρτωση…</div>
       ) : !rows.length ? (
-        <div className="p-12 text-center" style={cardStyle}>
+        <div className="p-12 text-center card-surface" style={cardStyle}>
           <Bike size={34} style={{ color: 'var(--text-muted)' }} className="mx-auto mb-3" />
           <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Δεν υπάρχουν καταχωρημένες μηχανές</p>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -256,7 +256,7 @@ export default function FleetVehicles() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 8) * 0.03 }}
                 onClick={() => setOpenId(v.id)}
-                className="p-4 text-left transition hover:shadow-md"
+                className="p-4 text-left transition hover:shadow-md card-surface"
                 style={{ ...cardStyle, opacity: v.is_active ? 1 : 0.55 }}
               >
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -452,7 +452,7 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
               { icon: Wrench, label: 'Από το τελ. service', value: `${Number(vehicle.km_since_service).toLocaleString('el-GR', { maximumFractionDigits: 0 })} χλμ` },
               { icon: Calendar, label: 'Βάρδιες', value: vehicle.shifts },
             ].map((s) => (
-              <div key={s.label} className="p-3" style={cardStyle}>
+              <div key={s.label} className="p-3 card-surface" style={cardStyle}>
                 <div className="flex items-center gap-1.5 mb-1">
                   <s.icon size={13} style={{ color: 'var(--text-muted)' }} />
                   <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -476,7 +476,7 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
           </div>
 
           {/* ── Στοιχεία μηχανής ────────────────────────────────────────── */}
-          <section className="p-4 space-y-4" style={cardStyle}>
+          <section className="p-4 space-y-4 card-surface" style={cardStyle}>
             <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Στοιχεία μηχανής</h3>
 
             <div className="grid grid-cols-2 gap-3">
@@ -524,7 +524,7 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
           </section>
 
           {/* ── Service & έγγραφα ───────────────────────────────────────── */}
-          <section className="p-4 space-y-4" style={cardStyle}>
+          <section className="p-4 space-y-4 card-surface" style={cardStyle}>
             <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Service &amp; έγγραφα</h3>
 
             <div className="grid grid-cols-2 gap-3">
@@ -635,7 +635,7 @@ function NotesSection({ vehicle, notes, loading, onSaved }) {
   }
 
   return (
-    <section className="p-4 space-y-4" style={cardStyle}>
+    <section className="p-4 space-y-4 card-surface" style={cardStyle}>
       <h3 className="font-bold text-sm flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
         <StickyNote size={16} /> Σημειώσεις &amp; ιστορικό
       </h3>

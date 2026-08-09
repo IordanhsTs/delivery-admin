@@ -94,15 +94,22 @@
 }
 
 /* === DARK THEME === */
+/* Παλέτα ίδια με το final-app/store-web-app (client feedback 08/09): βαθύ navy
+   φόντο, ΟΧΙ μαύρο/γκρι — και οι κάρτες (--bg-card) παραμένουν ΑΣΠΡΕΣ όπως εκεί.
+   Το κείμενο μέσα στις κάρτες σκουραίνει μέσω του .card-surface/.card-glass
+   override πιο κάτω, όχι εδώ. Το --bg-sidebar ΔΕΝ ακολουθεί το λευκό των καρτών —
+   το χρησιμοποιεί μόνο το πάνελ φόρτου του LiveMap, που έχει δική του isDark
+   λογική φτιαγμένη για σκούρο φόντο. Ο πλοηγητικός sidebar του App.jsx πέρασε σε
+   var(--bg-card) + class="card-surface" αντί για --bg-sidebar. */
 html.dark {
   color-scheme: dark;
   /* 60% — Deep base */
-  --bg-primary:    #0D0D0D;
-  --bg-secondary:  #161616;
-  --bg-tertiary:   #1A1A1A;
-  --bg-card:       #1C1C1C;
-  --bg-input:      #111111;
-  --bg-sidebar:    #111111;
+  --bg-primary:    #0B1020;
+  --bg-secondary:  #1B2338;
+  --bg-tertiary:   #222C44;
+  --bg-card:       #FFFFFF;
+  --bg-input:      #1B2338;
+  --bg-sidebar:    #1B2338;
 
   /* 30% — Secondary */
   --text-primary:   #F0EBE2;
@@ -140,6 +147,41 @@ html.dark {
   --shadow-md:  0 4px 16px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.20);
   --shadow-lg:  0 8px 32px rgba(0,0,0,0.50), 0 4px 8px rgba(0,0,0,0.30);
   --shadow-xl:  0 16px 48px rgba(0,0,0,0.60), 0 8px 16px rgba(0,0,0,0.40);
+}
+
+/* Οι κάρτες (--bg-card, .card-glass) είναι ΑΣΠΡΕΣ και σε dark mode· ό,τι κείμενο/
+   σύνορο ζει μέσα τους πρέπει να διαβάζεται σε άσπρο φόντο, όχι στο navy. Αντί να
+   αλλάξουμε ΚΑΘΕ var(--text-*) ξεχωριστά σε κάθε component, ξαναορίζουμε τις ίδιες
+   μεταβλητές ΤΟΠΙΚΑ πάνω στη ρίζα κάθε κάρτας (className="card-surface", ή αυτόματα
+   μέσω .card-glass) — τα παιδιά τις κληρονομούν μέσω CSS cascade. Οι τιμές είναι
+   ίδιες με το light theme. Δεν αγγίζουμε το accent (μένει το φωτεινό χρυσό dark mode). */
+html.dark .card-surface,
+html.dark .card-glass {
+  --bg-secondary:   #FFFFFF;
+  --bg-tertiary:    #F1EDE6;
+  --bg-input:       #F4F0EB;
+  --text-primary:   #1E1A14;
+  --text-secondary: #5C5248;
+  --text-muted:     #8A7F74;
+  --border-default: #E5DED4;
+  --border-subtle:  #EDE7DF;
+  --accent-light:   #F5ECD9;
+  --success:        #16A34A;
+  --success-bg:     #F0FDF4;
+  --success-border: #BBF7D0;
+  --danger:         #DC2626;
+  --danger-bg:      #FEF2F2;
+  --danger-border:  #FECACA;
+  --warning:        #D97706;
+  --warning-bg:     #FFFBEB;
+  --warning-border: #FDE68A;
+  --info:           #2563EB;
+  --info-bg:        #EFF6FF;
+  --info-border:    #BFDBFE;
+  --purple:         #7C3AED;
+  --purple-bg:      #F5F3FF;
+  --purple-border:  #DDD6FE;
+  color-scheme: light;
 }
 
 /* ============================================
@@ -245,28 +287,28 @@ body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
 }
 html.dark .card-glass {
-  background-color: rgba(26, 26, 26, 0.9) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
 }
+/* .table-header-glass/.input-glass/.btn-glass/.hover-row-glass ζουν πάντα ΜΕΣΑ σε
+   .card-glass, άρα σε dark mode είναι ήδη πάνω σε άσπρο φόντο — οι τιμές τους
+   αντιγράφουν σκόπιμα το light theme αντί να «σκουρύνουν». */
 .table-header-glass {
   background-color: #F8F9FA !important;
   color: #1E1A14 !important;
 }
 html.dark .table-header-glass {
-  background-color: #111111 !important;
-  color: #C5A066 !important;
+  background-color: #F8F9FA !important;
+  color: #1E1A14 !important;
 }
+/* text-adaptive/-light ζουν ΚΑΙ έξω από κάρτες (π.χ. τίτλοι σελίδας πάνω στο navy
+   φόντο) — γι' αυτό ακολουθούν το var(--text-*), που ήδη αλλάζει σωστά ανάλογα με
+   το αν το στοιχείο είναι μέσα σε .card-glass/.card-surface ή όχι. */
 .text-adaptive {
-  color: #475569 !important;
-}
-html.dark .text-adaptive {
-  color: #94a3b8 !important;
+  color: var(--text-secondary) !important;
 }
 .text-adaptive-light {
-  color: #1e293b !important;
-}
-html.dark .text-adaptive-light {
-  color: #e2e8f0 !important;
+  color: var(--text-primary) !important;
 }
 
 .input-glass {
@@ -274,24 +316,24 @@ html.dark .text-adaptive-light {
   color: #1e293b !important;
 }
 html.dark .input-glass {
-  color-scheme: dark !important;
-  background-color: #050505 !important;
-  color: #F0EBE2 !important;
+  color-scheme: light !important;
+  background-color: #FFFFFF !important;
+  color: #1e293b !important;
 }
 
 .btn-glass {
   background-color: #FFFFFF !important;
 }
 html.dark .btn-glass {
-  color-scheme: dark !important;
-  background-color: #050505 !important;
+  color-scheme: light !important;
+  background-color: #FFFFFF !important;
 }
 
 .hover-row-glass:hover {
   background-color: #F1F5F9 !important;
 }
 html.dark .hover-row-glass:hover {
-  background-color: #252525 !important;
+  background-color: #F1F5F9 !important;
 }
 
 /* Fix for date picker icon in dark mode */

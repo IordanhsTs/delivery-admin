@@ -155,7 +155,7 @@ export default function Messages() {
           ενώ γράφει ένα νέο μήνυμα. Σε στενή οθόνη πέφτουν η μία κάτω από την άλλη. */}
       <div className="flex flex-col lg:flex-row gap-8 items-start">
       <div
-        className="w-full lg:flex-1 max-w-2xl backdrop-blur-md p-6 rounded-2xl border shadow-lg"
+        className="w-full lg:flex-1 max-w-2xl backdrop-blur-md p-6 rounded-2xl border shadow-lg card-surface"
         style={{
           backgroundColor: 'var(--bg-card)',
           borderColor: 'var(--border-subtle)',

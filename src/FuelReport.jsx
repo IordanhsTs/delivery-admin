@@ -196,7 +196,7 @@ export default function FuelReport() {
       {showSettings && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="mb-6 overflow-hidden">
-          <div className="p-5" style={card}>
+          <div className="p-5 card-surface" style={card}>
             <h3 className="font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Gauge size={18} /> Προεπιλογές στόλου
             </h3>
@@ -235,12 +235,12 @@ export default function FuelReport() {
       {/* ── Πλοήγηση εβδομάδας ──────────────────────────────────────────── */}
       <div className="flex items-center justify-center gap-3 mb-6">
         <button onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition"
+          className="w-10 h-10 rounded-lg flex items-center justify-center transition card-surface"
           style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
           title="Προηγούμενη εβδομάδα">
           <ChevronLeft size={20} />
         </button>
-        <div className="px-5 py-2 rounded-lg text-center min-w-[240px]" style={card}>
+        <div className="px-5 py-2 rounded-lg text-center min-w-[240px] card-surface" style={card}>
           <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
             Δευτέρα – Κυριακή
           </div>
@@ -249,7 +249,7 @@ export default function FuelReport() {
           </div>
         </div>
         <button onClick={() => setWeekStart(addDays(weekStart, 7))} disabled={isCurrentWeek}
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition disabled:opacity-30"
+          className="w-10 h-10 rounded-lg flex items-center justify-center transition disabled:opacity-30 card-surface"
           style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
           title="Επόμενη εβδομάδα">
           <ChevronRight size={20} />
@@ -272,7 +272,7 @@ export default function FuelReport() {
           { icon: Euro, label: 'Κόστος καυσίμου', value: `${totals.cost.toFixed(2)} €`, accent: true },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.04 }} className="p-4" style={card}>
+            transition={{ delay: i * 0.04 }} className="p-4 card-surface" style={card}>
             <div className="flex items-center gap-2 mb-2">
               <s.icon size={16} style={{ color: s.accent ? 'var(--accent)' : 'var(--text-muted)' }} />
               <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -288,7 +288,7 @@ export default function FuelReport() {
       </div>
 
       {/* ── Πίνακας ανά διανομέα ────────────────────────────────────────── */}
-      <div style={card} className="overflow-hidden">
+      <div style={card} className="overflow-hidden card-surface">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: 760 }}>
             <thead>
@@ -396,7 +396,7 @@ export default function FuelReport() {
       {/* ── Τι ακριβώς μετράει αυτό το νούμερο ──────────────────────────── */}
       {/* Δεν είναι διακοσμητική υποσημείωση: εξηγεί τι ακριβώς χρεώνεται στον
           διανομέα, οπότε πρέπει να διαβάζεται — text-secondary, όχι muted. */}
-      <div className="mt-4 p-4 text-xs leading-relaxed" style={{ ...card, color: 'var(--text-secondary)' }}>
+      <div className="mt-4 p-4 text-xs leading-relaxed card-surface" style={{ ...card, color: 'var(--text-secondary)' }}>
         <strong style={{ color: 'var(--text-primary)' }}>Πώς υπολογίζεται:</strong> αθροίζεται η πραγματική
         μετατόπιση από τα στίγματα GPS όσο ο διανομέας είναι συνδεδεμένος — άρα περιλαμβάνει επιστροφές,
         κενές διαδρομές και προσωπικές βόλτες με τη μηχανή. Στίγματα κάτω από 20 μέτρα αγνοούνται ώστε ο

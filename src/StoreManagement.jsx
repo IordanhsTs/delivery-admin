@@ -223,10 +223,11 @@ export default function StoreManagement() {
               : { backgroundColor: 'transparent', color: 'var(--text-secondary)' }}>
             <t.icon size={15} /> {t.label}
             {t.count ? (
-              <span className="text-[11px] px-1.5 py-0.5 rounded-md"
+              <span
+                    className={activeTab === t.key ? 'text-[11px] px-1.5 py-0.5 rounded-md' : 'text-[11px] px-1.5 py-0.5 rounded-md card-surface'}
                     style={activeTab === t.key
                       ? { backgroundColor: 'rgba(255,255,255,0.22)' }
-                      : { backgroundColor: 'var(--bg-card)' }}>
+                      : { backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
                 {t.count}
               </span>
             ) : null}
@@ -284,7 +285,7 @@ export default function StoreManagement() {
 
 function EmptyState({ icon: Icon, title, text }) {
   return (
-    <div className="p-12 text-center" style={cardStyle}>
+    <div className="p-12 text-center card-surface" style={cardStyle}>
       <Icon size={34} style={{ color: 'var(--text-muted)' }} className="mx-auto mb-3" />
       <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title}</p>
       <p className="text-sm m-0" style={{ color: 'var(--text-muted)' }}>{text}</p>
@@ -311,7 +312,7 @@ function StoreCard({ store, index, onEdit }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 8) * 0.03 }}
-      className="p-4 flex flex-col gap-3 transition hover:shadow-md"
+      className="p-4 flex flex-col gap-3 transition hover:shadow-md card-surface"
       style={{ ...cardStyle, opacity: store.is_blocked ? 0.6 : 1 }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -367,7 +368,7 @@ function CourierCard({ courier, now, index, onEdit }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 8) * 0.03 }}
-      className="p-4 flex flex-col gap-3 transition hover:shadow-md"
+      className="p-4 flex flex-col gap-3 transition hover:shadow-md card-surface"
       style={{ ...cardStyle, opacity: courier.is_blocked ? 0.6 : 1 }}
     >
       <div className="flex items-start gap-3">
@@ -554,7 +555,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
     <Drawer icon={Building2} title={store.name}
       subtitle={store.email || 'Χωρίς email'} onClose={onClose}>
 
-      <section className="p-4 space-y-4" style={cardStyle}>
+      <section className="p-4 space-y-4 card-surface" style={cardStyle}>
         <h3 className="font-bold text-sm m-0" style={{ color: 'var(--text-primary)' }}>Στοιχεία καταστήματος</h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -598,7 +599,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
         </div>
       </section>
 
-      <section className="p-4 space-y-4" style={cardStyle}>
+      <section className="p-4 space-y-4 card-surface" style={cardStyle}>
         <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
           <Lock size={16} /> Προσωπικά στοιχεία ιδιοκτήτη
         </h3>
@@ -623,7 +624,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
         </Field>
       </section>
 
-      <section className="p-4 space-y-4" style={cardStyle}>
+      <section className="p-4 space-y-4 card-surface" style={cardStyle}>
         <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
           <MapPin size={16} /> Θέση στον χάρτη
         </h3>
@@ -739,7 +740,7 @@ function CourierDrawer({ courier, now, onClose, onChanged }) {
         {courier.is_blocked ? <Pill tone="danger" icon={Ban}>Μπλοκαρισμένος</Pill> : null}
       </div>
 
-      <section className="p-4 space-y-4" style={cardStyle}>
+      <section className="p-4 space-y-4 card-surface" style={cardStyle}>
         <h3 className="font-bold text-sm m-0" style={{ color: 'var(--text-primary)' }}>Στοιχεία διανομέα</h3>
 
         <Field label="Ονοματεπώνυμο">
@@ -834,7 +835,7 @@ function CreateDrawer({ kind, onClose, onCreated }) {
       onClose={onClose}>
 
       <form onSubmit={submit} className="space-y-6">
-        <section className="p-4 space-y-4" style={cardStyle}>
+        <section className="p-4 space-y-4 card-surface" style={cardStyle}>
           <Field label={isStore ? 'Όνομα καταστήματος *' : 'Ονοματεπώνυμο *'}>
             <input value={form.name} onChange={(e) => set('name', e.target.value)}
               placeholder={isStore ? 'π.χ. Burger House' : 'π.χ. Γιάννης Παπ.'}
@@ -865,7 +866,7 @@ function CreateDrawer({ kind, onClose, onCreated }) {
           ) : null}
         </section>
 
-        <section className="p-4 space-y-4" style={cardStyle}>
+        <section className="p-4 space-y-4 card-surface" style={cardStyle}>
           <h3 className="font-bold text-sm m-0" style={{ color: 'var(--text-primary)' }}>Λογαριασμός σύνδεσης</h3>
           <Field label="Email (login) *">
             <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)}

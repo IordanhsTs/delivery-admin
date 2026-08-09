@@ -564,7 +564,7 @@ export default function Schedule() {
       {/* ── Ρυθμίσεις: στόχοι κάλυψης + προθεσμία ──────────────────────── */}
       {showSettings && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 overflow-hidden">
-          <div className="p-5" style={card}>
+          <div className="p-5 card-surface" style={card}>
             {/* ── Ώρες λειτουργίας ──────────────────────────────────────── */}
             <h3 className="font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Clock size={18} /> Ώρες λειτουργίας
@@ -658,17 +658,17 @@ export default function Schedule() {
       {/* ── Πλοήγηση εβδομάδας ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
         <button onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ ...card, color: 'var(--text-secondary)' }}>
+          className="w-10 h-10 rounded-lg flex items-center justify-center card-surface" style={{ ...card, color: 'var(--text-secondary)' }}>
           <ChevronLeft size={20} />
         </button>
-        <div className="px-5 py-2 rounded-lg text-center min-w-[260px]" style={card}>
+        <div className="px-5 py-2 rounded-lg text-center min-w-[260px] card-surface" style={card}>
           <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
             Δευτέρα – Κυριακή
           </div>
           <div className="font-bold" style={{ color: 'var(--text-primary)' }}>{prettyRange(weekStart, weekEnd)}</div>
         </div>
         <button onClick={() => setWeekStart(addDays(weekStart, 7))}
-          className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ ...card, color: 'var(--text-secondary)' }}>
+          className="w-10 h-10 rounded-lg flex items-center justify-center card-surface" style={{ ...card, color: 'var(--text-secondary)' }}>
           <ChevronRight size={20} />
         </button>
         <button onClick={() => setWeekStart(addDays(mondayOf(new Date()), 7))}
@@ -711,7 +711,7 @@ export default function Schedule() {
 
       {/* ── Σύνοψη: ποιοι δήλωσαν, πού είναι τα κενά ───────────────────── */}
       <div className="grid gap-4 md:grid-cols-2 mb-6">
-        <div className="p-4" style={card}>
+        <div className="p-4 card-surface" style={card}>
           <div className="flex items-center gap-2 mb-2">
             <Users size={16} style={{ color: 'var(--text-muted)' }} />
             <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -730,7 +730,7 @@ export default function Schedule() {
           )}
         </div>
 
-        <div className="p-4" style={card}>
+        <div className="p-4 card-surface" style={card}>
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={16} style={{ color: gaps.length ? 'var(--danger)' : 'var(--text-muted)' }} />
             <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -788,7 +788,7 @@ export default function Schedule() {
       </div>
 
       {/* ── Κάλυψη ─────────────────────────────────────────────────────── */}
-      <div className="p-4 mb-6 overflow-x-auto" style={card}>
+      <div className="p-4 mb-6 overflow-x-auto card-surface" style={card}>
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
             {focusDay === null ? 'Κάλυψη ανά ώρα' : `Κάλυψη — ${DAYS[focusDay]}`}
@@ -873,7 +873,7 @@ export default function Schedule() {
       </div>
 
       {/* ── Πίνακας: διανομείς × ημέρες ────────────────────────────────── */}
-      <div style={card} className="overflow-hidden">
+      <div style={card} className="overflow-hidden card-surface">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: focusDay === null ? 980 : 420 }}>
             <thead>
@@ -987,7 +987,7 @@ export default function Schedule() {
         </div>
       </div>
 
-      <div className="mt-4 p-4 text-xs leading-relaxed" style={{ ...card, color: 'var(--text-secondary)' }}>
+      <div className="mt-4 p-4 text-xs leading-relaxed card-surface" style={{ ...card, color: 'var(--text-secondary)' }}>
         <strong style={{ color: 'var(--text-primary)' }}>Πώς δουλεύει:</strong> οι διανομείς δηλώνουν από την
         εφαρμογή πότε μπορούν να δουλέψουν την επόμενη εβδομάδα, και η δήλωσή τους μπαίνει{' '}
         <strong style={{ color: 'var(--text-primary)' }}>μόνη της στο προσχέδιο</strong> — δεν εγκρίνεις τίποτα.

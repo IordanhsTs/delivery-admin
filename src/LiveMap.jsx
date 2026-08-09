@@ -15,12 +15,10 @@ import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatKm, formatEuro, formatCountdown, orderDurations } from './distance';
 
-// Tile layer URLs
-const TILES = {
-  // Επαναφορά στους Carto μέχρι να βάλουμε το επίσημο Google Maps API
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-};
+// Tile layer URL — client feedback 08/09: ίδιος χάρτης (Voyager) και στα δύο theme,
+// αντί για ξεχωριστό σκούρο layer στο dark mode. Επαναφορά στους Carto μέχρι να
+// βάλουμε το επίσημο Google Maps API.
+const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
 // Τα εικονίδια έρχονται από το ΙΔΙΟ το πακέτο leaflet (node_modules) και μπαίνουν
 // στο bundle από το Vite — όχι από CDN. Έτσι ο χάρτης δείχνει σωστούς δείκτες
@@ -191,7 +189,7 @@ function RailSection({ Icon, title, count, tint, children }) {
   const [open, setOpen] = useState(true);
   return (
     <section
-      className="rounded-xl overflow-hidden"
+      className="rounded-xl overflow-hidden card-surface"
       style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xs)' }}
     >
       <button
@@ -240,7 +238,6 @@ function RailEmpty({ Icon, children }) {
 export default function LiveMap() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const currentTile = TILES[theme] || TILES.dark;
 
   const mapFilter = 'none';
   const [drivers, setDrivers] = useState([]);
@@ -798,7 +795,7 @@ export default function LiveMap() {
             <MapFocusHandler target={focusTarget} />
             <TileLayer
               attribution='&copy; <a href="https://carto.com/">Carto</a>'
-              url={currentTile}
+              url={MAP_TILE_URL}
             />
             <ZoomControl position="bottomleft" />
 
@@ -1133,6 +1130,15 @@ export default function LiveMap() {
                   const pickedUpMins = order.picked_up_at
                     ? Math.max(0, Math.floor(((order.completed_at ? new Date(order.completed_at) : currentTime) - new Date(order.picked_up_at)) / 60000))
                     : null;
+                  // Συνολικός χρόνος παραγγελίας (client feedback 08/09): άθροισμα των τριών
+                  // φάσεων. ΔΕΝ χρησιμοποιούμε το acceptedMins όπως είναι (αυτό μετρά μέχρι
+                  // completed_at/τώρα, όχι μέχρι την παραλαβή) — αλλιώς το διάστημα
+                  // παραλαβή→τώρα θα μετρούσε ΔΙΠΛΑ, και μέσα στο «Αποδεκτή» και ξανά μέσα
+                  // στο «Παρελήφθη». Το κουτάκι «Αποδεκτή» δεν αγγίζεται, μένει όπως είναι.
+                  const acceptedToPickupMins = (order.picked_up_at && order.accepted_at)
+                    ? Math.max(0, Math.floor((new Date(order.picked_up_at) - new Date(order.accepted_at)) / 60000))
+                    : acceptedMins;
+                  const totalMins = activeMins + acceptedToPickupMins + (pickedUpMins || 0);
                   return (
                   <motion.div
                     key={order.id}
@@ -1155,6 +1161,15 @@ export default function LiveMap() {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <DistanceChip order={order} />
+                        {/* Συνολικός χρόνος παραγγελίας (client feedback 08/09): πάνω δεξιά
+                            στην κάρτα — Ενεργή + Αποδεκτή + Παρελήφθη. */}
+                        <span
+                          className="text-[10px] font-black px-1.5 py-0.5 rounded inline-flex items-center gap-1 tabular-nums"
+                          style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                          title={`Συνολικός χρόνος: Ενεργή ${activeMins}′ + Αποδεκτή ${acceptedToPickupMins}′${order.picked_up_at ? ` + Παρελήφθη ${pickedUpMins}′` : ''} = ${totalMins}′`}
+                        >
+                          <Clock size={10} /> {totalMins}′
+                        </span>
                       </div>
                     </div>
 
@@ -1209,8 +1224,9 @@ export default function LiveMap() {
                       </div>
                     </div>
 
-                    {/* Ενέργειες: κοινό μέγεθος/spacing· swap secondary, ✓/✕ πιο έντονα */}
-                    <div className="flex items-center justify-end gap-1.5 mt-2">
+                    {/* Ενέργειες: απλωμένα ισομερώς σε όλο το πλάτος της κάρτας (client
+                        feedback 08/09) αντί να στριμώχνονται στην κάτω δεξιά γωνία. */}
+                    <div className="flex items-center justify-between gap-1.5 mt-2">
                       <button
                         onClick={() => setReassigningOrderId(reassigningOrderId === order.id ? null : order.id)}
                         className="w-[30px] h-[30px] rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
@@ -1221,7 +1237,6 @@ export default function LiveMap() {
                       >
                         <Repeat size={14} />
                       </button>
-                      <span className="w-px self-stretch my-0.5" style={{ backgroundColor: 'var(--border-subtle)' }} />
                       <button
                         onClick={() => completeOrder(order.id)}
                         className="w-[30px] h-[30px] rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"

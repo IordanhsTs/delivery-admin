@@ -40,7 +40,7 @@ export default function StoreInbox() {
       {/* max-h + εσωτερικό scroll: έτσι η λίστα δεν μεγαλώνει απεριόριστα δίπλα στη
           φόρμα — σκρολάρει μέσα στο δικό της κουτί, όχι όλη η σελίδα. */}
       <div
-        className="rounded-2xl overflow-y-auto"
+        className="rounded-2xl overflow-y-auto card-surface"
         style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-md)', maxHeight: '560px' }}
       >
         {loading ? (

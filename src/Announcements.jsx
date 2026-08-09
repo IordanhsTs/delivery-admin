@@ -165,7 +165,7 @@ export default function Announcements() {
         {composerOpen && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }} className="mb-6 overflow-hidden">
-            <div className="p-5" style={card}>
+            <div className="p-5 card-surface" style={card}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>
                   {editingId ? 'Επεξεργασία ανακοίνωσης' : 'Νέα ανακοίνωση'}
@@ -208,16 +208,16 @@ export default function Announcements() {
 
       {/* ── Λίστα ──────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="p-10 text-center" style={{ ...card, color: 'var(--text-muted)' }}>Φόρτωση…</div>
+        <div className="p-10 text-center card-surface" style={{ ...card, color: 'var(--text-muted)' }}>Φόρτωση…</div>
       ) : !visible.length ? (
-        <div className="p-10 text-center" style={{ ...card, color: 'var(--text-muted)' }}>
+        <div className="p-10 text-center card-surface" style={{ ...card, color: 'var(--text-muted)' }}>
           {showArchived ? 'Το αρχείο είναι άδειο.' : 'Καμία ενεργή ανακοίνωση.'}
         </div>
       ) : (
         <div className="space-y-3">
           {visible.map((row) => (
             <motion.div key={row.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              className="p-4" style={{ ...card, borderColor: row.pinned ? 'var(--accent)' : 'var(--border-default)' }}>
+              className="p-4 card-surface" style={{ ...card, borderColor: row.pinned ? 'var(--accent)' : 'var(--border-default)' }}>
               <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-[200px]">
                   <div className="flex items-center gap-2 mb-1">

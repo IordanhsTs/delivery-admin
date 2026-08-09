@@ -325,9 +325,9 @@ export default function App() {
           SIDEBAR
       ══════════════════════════════ */}
       <div
-        className="w-full md:w-64 shrink-0 flex flex-col z-10 border-r"
+        className="w-full md:w-64 shrink-0 flex flex-col z-10 border-r card-surface"
         style={{
-          backgroundColor: 'var(--bg-sidebar)',
+          backgroundColor: 'var(--bg-card)',
           borderColor: 'var(--border-default)',
           boxShadow: 'var(--shadow-sm)',
         }}
@@ -378,9 +378,9 @@ export default function App() {
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
               <div
-                className="absolute right-2 top-full mt-1 z-40 w-56 rounded-2xl overflow-hidden p-1.5"
+                className="absolute right-2 top-full mt-1 z-40 w-56 rounded-2xl overflow-hidden p-1.5 card-surface"
                 style={{
-                  backgroundColor: 'var(--bg-sidebar)',
+                  backgroundColor: 'var(--bg-card)',
                   border: '1px solid var(--border-default)',
                   boxShadow: 'var(--shadow-xl)',
                 }}

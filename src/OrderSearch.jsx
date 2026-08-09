@@ -129,7 +129,7 @@ export default function OrderSearch() {
 
       {/* Φίλτρα */}
       <div
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 p-4 md:p-5 rounded-2xl items-end"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 p-4 md:p-5 rounded-2xl items-end card-surface"
         style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-md)' }}
       >
         <div className="flex flex-col gap-1.5 lg:col-span-2">
@@ -188,7 +188,7 @@ export default function OrderSearch() {
             return (
               <div
                 key={order.id}
-                className="p-3 rounded-xl flex flex-col md:flex-row md:items-center gap-2 md:gap-4"
+                className="p-3 rounded-xl flex flex-col md:flex-row md:items-center gap-2 md:gap-4 card-surface"
                 style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
               >
                 <span
@@ -241,7 +241,7 @@ export default function OrderSearch() {
         </div>
       ) : searched ? (
         <div
-          className="p-8 rounded-2xl text-center flex flex-col items-center justify-center"
+          className="p-8 rounded-2xl text-center flex flex-col items-center justify-center card-surface"
           style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
         >
           <Inbox size={48} style={{ color: 'var(--text-muted)' }} className="mb-4" />
