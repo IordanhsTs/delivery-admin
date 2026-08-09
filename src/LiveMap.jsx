@@ -151,7 +151,7 @@ function OrderNumber({ n }) {
   );
 }
 
-// ── Πλακίδιο της σύνοψης ημέρας (κάτω από τον χάρτη) ────────────────────────
+// ── Πλακίδιο της σύνοψης ημέρας (κάτω δεξιά, στη στήλη εργασίας) ────────────
 // ΧΩΡΙΣ σύγκριση με χθες (απόφαση πελάτη): δείχνουμε μόνο την τρέχουσα τιμή —
 // το «+1 από χθες» δεν οδηγεί σε καμία ενέργεια μέσα στη βάρδια.
 function StatTile({ Icon, value, label, tint, bg, border, title }) {
@@ -222,6 +222,68 @@ function RailSection({ Icon, title, count, tint, children }) {
       </button>
       {open && <div className="px-3 pb-3">{children}</div>}
     </section>
+  );
+}
+
+// ── Κάρτα διανομέα στη λωρίδα κάτω από τον χάρτη ────────────────────────────
+// Client feedback 08/09: οι διανομείς έφυγαν από τη δεξιά στήλη και μπήκαν
+// οριζόντια κάτω από τον χάρτη, ώστε να φαίνονται ΟΛΟΙ ταυτόχρονα χωρίς σκρολ.
+// Σε αυτό το ύψος δεν χωράει ξεχωριστό κουμπί «Προβολή στον χάρτη» — ολόκληρη
+// η κάρτα είναι το κουμπί (το crosshair δίπλα στο όνομα το δηλώνει).
+function DriverStripCard({ driver, dotColor, subText, subColor, battery, signalText, deliveries, onFocus }) {
+  return (
+    <button
+      type="button"
+      onClick={onFocus}
+      // Ό,τι έδειχνε η παλιά κάρτα σε ξεχωριστές γραμμές (σήμα, παραδόσεις,
+      // μπαταρία) ζει εδώ ολόκληρο: στη λωρίδα κρατάμε δύο γραμμές, αλλιώς με 7-8
+      // διανομείς το ύψος τρώει τον χάρτη.
+      title={`${driver.full_name} · ${subText} · σήμα ${signalText} · ${deliveries} ${deliveries === 1 ? 'παράδοση' : 'παραδόσεις'} σήμερα — κλικ για προβολή στον χάρτη`}
+      // `card-surface`: σε dark mode το --bg-card είναι ΑΣΠΡΟ (navy φόντο + άσπρες
+      // κάρτες), οπότε χωρίς αυτό το κείμενο έμενε στα ανοιχτόχρωμα dark tokens
+      // πάνω σε άσπρο — 2.7:1, ουσιαστικά αδιάβαστο.
+      className="hover-row-glass card-surface min-w-0 rounded-xl px-2.5 py-2 text-left transition-colors"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-default)',
+        borderLeft: `3px solid ${dotColor}`,
+        boxShadow: 'var(--shadow-xs)',
+      }}
+    >
+      {/* Πάνω γραμμή: ΜΟΝΟ το όνομα — με τη μπαταρία δίπλα του κοβόταν ακόμα και
+          το «Γιώργος Παπαδόπουλος» σε οθόνη 1280. Η μπαταρία κατέβηκε κάτω. */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center"
+          style={{ backgroundColor: 'var(--bg-tertiary)', border: `1px solid ${dotColor}` }}
+        >
+          <Bike size={14} style={{ color: dotColor }} />
+        </span>
+        <p className="text-[12.5px] font-bold leading-tight truncate m-0 flex-1" style={{ color: 'var(--text-primary)' }}>
+          {driver.full_name}
+        </p>
+        <Crosshair size={11} className="shrink-0" style={{ color: 'var(--text-muted)', opacity: 0.6 }} />
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
+        <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ backgroundColor: dotColor }} />
+        <span className="text-[12px] leading-tight truncate" style={{ color: subColor }}>{subText}</span>
+        {battery && (
+          <span
+            className="ml-auto shrink-0 flex items-center gap-0.5 text-[11px] font-bold tabular-nums"
+            style={{ color: battery.color }}
+          >
+            <battery.Icon size={12} /> {driver.battery_level}%
+          </span>
+        )}
+        <span
+          className={`${battery ? '' : 'ml-auto '}shrink-0 flex items-center gap-0.5 text-[11px] font-bold tabular-nums`}
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          <Check size={11} /> {deliveries}
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -1300,122 +1362,80 @@ export default function LiveMap() {
             )}
           </RailSection>
 
-          {/* Διανομείς */}
-          <RailSection Icon={Users} title="Διανομείς" count={visibleDrivers.length} tint="var(--text-secondary)">
-            {visibleDrivers.length === 0 ? (
-              <RailEmpty>Κανένας διανομέας συνδεδεμένος</RailEmpty>
-            ) : (
-              <div className="space-y-2">
-                {visibleDrivers.map(driver => {
-                  const ageMin = signalAgeMin(driver);
-                  const noSignal = ageMin > SIGNAL_FRESH_MIN;
-                  const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
-                  const battery = batteryVisual(driver.battery_level);
+          {/* Σήμερα με μια ματιά — client feedback 08/09: αντάλλαξε θέση με τους
+              διανομείς. Τα πλακίδια είναι σύνοψη και χωράνε άνετα 2×2 στα 340px,
+              ενώ οι διανομείς χρειάζονται πλάτος για να φαίνονται όλοι μαζί.
+              ΧΩΡΙΣ το πλακίδιο «Διανομείς σε βάρδια» (αίτημα πελάτη): ο ίδιος
+              αριθμός φαίνεται πλέον στην κεφαλίδα της λωρίδας κάτω από τον χάρτη. */}
+          <RailSection Icon={TrendingUp} title="Σήμερα με μια ματιά" tint="var(--text-secondary)">
+            <div className="flex flex-wrap gap-2">
+              <StatTile
+                Icon={Check}
+                value={ordersToday}
+                label="Ολοκληρωμένες"
+                tint="var(--success)"
+                bg="var(--success-bg)"
+                border="var(--success-border)"
+                title="Παραγγελίες που ολοκληρώθηκαν σήμερα"
+              />
 
-                  // Ίδιος χρωματικός κώδικας με τους δείκτες του χάρτη: χρυσό =
-                  // ελεύθερος, πράσινο = σε διανομή, γκρι = χωρίς σήμα.
-                  let dotColor = 'var(--accent)';
-                  let subText = 'Ελεύθερος';
-                  let subColor = 'var(--text-secondary)';
+              <StatTile
+                Icon={Timer}
+                value={avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
+                label="Μ.Ο. χρόνος"
+                tint="var(--info)"
+                bg="var(--info-bg)"
+                border="var(--info-border)"
+                title="Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες"
+              />
 
-                  if (noSignal) {
-                    dotColor = 'var(--map-offline)';
-                    subText = `Χωρίς σήμα: ${Math.floor(ageMin)} λ.`;
-                    subColor = 'var(--text-muted)';
-                  } else if (activeCount > 0) {
-                    dotColor = 'var(--success)';
-                    subText = `Σε διανομή (${activeCount})`;
-                    subColor = 'var(--success)';
-                  } else {
-                    const lastTime = lastCompletedTimes[driver.id];
-                    if (lastTime) {
-                      const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
-                      subText = `Ελεύθερος: ${diffMins} λ.`;
-                      subColor = diffMins > 10 ? 'var(--danger)' : 'var(--text-secondary)';
-                    }
-                  }
+              <StatTile
+                Icon={Flame}
+                value={nowLoadText}
+                label="Αναμενόμενος φόρτος"
+                tint={NOW_LOAD_STYLE[nowLoadLevel].tint}
+                bg={NOW_LOAD_STYLE[nowLoadLevel].bg}
+                border={NOW_LOAD_STYLE[nowLoadLevel].border}
+                title={nowLoad === null
+                  ? 'Δεν υπάρχουν ακόμη αρκετά δεδομένα για εκτίμηση'
+                  : `${DOW_FULL[currentTime.getDay()]} ${String(currentTime.getHours()).padStart(2, '0')}:00–${String((currentTime.getHours() + 1) % 24).padStart(2, '0')}:00 · ιστορικά μ.ό. ${fmtLoad(nowLoad)} παραγγελίες`
+                    + (peakValue > 0 ? ` — ${Math.round(nowLoadRatio * 100)}% της σημερινής αιχμής` : '')}
+              />
 
-                  const signalText = ageMin < 1 ? 'μόλις τώρα' : `πριν ${Math.floor(ageMin)} λ.`;
-
-                  return (
-                    <div
-                      key={driver.id}
-                      className="rounded-xl p-2.5"
-                      style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
-                          style={{ backgroundColor: 'var(--bg-tertiary)', border: `1px solid ${dotColor}` }}
-                        >
-                          <Bike size={18} style={{ color: dotColor }} />
-                        </span>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-[13px] font-bold leading-tight truncate m-0 flex-1" style={{ color: 'var(--text-primary)' }}>
-                              {driver.full_name}
-                            </p>
-                            {battery && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold shrink-0" style={{ color: battery.color }}>
-                                {driver.battery_level}% <battery.Icon size={13} />
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[12px] leading-tight m-0 mt-1 flex items-center gap-1.5" style={{ color: subColor }}>
-                            <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ backgroundColor: dotColor }} />
-                            {subText}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <div className="min-w-0 pr-2">
-                          <p className="text-[10px] leading-none m-0" style={{ color: 'var(--text-muted)' }}>Σήμα</p>
-                          <p className="text-[12px] font-semibold leading-tight m-0 mt-1 truncate" style={{ color: 'var(--text-primary)' }}>
-                            {signalText}
-                          </p>
-                        </div>
-                        <div className="min-w-0 pl-3 border-l" style={{ borderColor: 'var(--border-subtle)' }}>
-                          <p className="text-[10px] leading-none m-0" style={{ color: 'var(--text-muted)' }}>Παραδόσεις σήμερα</p>
-                          <p className="text-[12px] font-semibold leading-tight m-0 mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                            {deliveriesToday[driver.id] || 0}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFocusTarget({ lat: driver.latitude, lng: driver.longitude, ts: Date.now() });
-                          mapWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        }}
-                        className="hover-row-glass w-full mt-2.5 py-2 rounded-lg flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors"
-                        style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
-                      >
-                        <Crosshair size={13} /> Προβολή στον χάρτη
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+              <StatTile
+                Icon={TrendingUp}
+                value={peakHour !== null ? `${String(peakHour).padStart(2, '0')}:00` : '—'}
+                label="Ώρα αιχμής"
+                tint="var(--purple)"
+                bg="var(--purple-bg)"
+                border="var(--purple-border)"
+                title={peakHour !== null
+                  ? `Ιστορικά η πιο φορτωμένη ώρα για σήμερα — μ.ό. ${peakValue >= 10 ? Math.round(peakValue) : peakValue.toFixed(1)} παραγγελίες`
+                  : 'Δεν υπάρχουν ακόμη αρκετά δεδομένα'}
+              />
+            </div>
           </RailSection>
         </aside>
       </div>
 
-      {/* ════════ ΚΑΤΩ ΓΡΑΜΜΗ: ΣΥΝΟΨΗ ΗΜΕΡΑΣ + ΦΟΡΤΟΣ ════════ */}
-      {/* Ίδιο πλάτος στηλών με τον χάρτη/δεξιά στήλη από πάνω, ώστε τα πλακίδια
+      {/* ════════ ΚΑΤΩ ΓΡΑΜΜΗ: ΔΙΑΝΟΜΕΙΣ + ΦΟΡΤΟΣ ════════ */}
+      {/* Ίδιο πλάτος στηλών με τον χάρτη/δεξιά στήλη από πάνω, ώστε οι διανομείς
           να κάθονται κάτω από τον χάρτη και ο φόρτος κάτω από τη λίστα. */}
       <div
         className="flex flex-col md:flex-row shrink-0 border-t"
         style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-secondary)' }}
       >
-        {/* ── Σήμερα με μια ματιά ── */}
+        {/* ── Διανομείς σε βάρδια (οριζόντια λωρίδα κάτω από τον χάρτη) ── */}
         <div className="flex-1 min-w-0 px-3 py-2.5">
           <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              Σήμερα με μια ματιά
+            <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+              <Users size={13} /> Διανομείς σε βάρδια
+              <span
+                className="text-[11px] font-bold px-1.5 rounded-full tabular-nums"
+                style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+              >
+                {visibleDrivers.length}
+              </span>
             </span>
             <span className="text-[10px] flex items-center gap-1.5 shrink-0" style={{ color: 'var(--text-muted)' }}>
               <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ backgroundColor: 'var(--success)' }} />
@@ -1423,62 +1443,65 @@ export default function LiveMap() {
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <StatTile
-              Icon={Check}
-              value={ordersToday}
-              label="Ολοκληρωμένες"
-              tint="var(--success)"
-              bg="var(--success-bg)"
-              border="var(--success-border)"
-              title="Παραγγελίες που ολοκληρώθηκαν σήμερα"
-            />
+          {visibleDrivers.length === 0 ? (
+            <p className="flex items-center gap-1.5 text-[12px] py-3 m-0" style={{ color: 'var(--text-muted)' }}>
+              <Bike size={14} /> Κανένας διανομέας συνδεδεμένος — η βάρδια δεν έχει ξεκινήσει.
+            </p>
+          ) : (
+            // Grid αντί για flex-wrap: με 7 διανομείς το flex-wrap τέντωνε τις 2
+            // κάρτες της τελευταίας σειράς στο διπλάσιο πλάτος. Το auto-fill κρατά
+            // ίδιο πλάτος σε όλες και γεμίζει όσο πλάτος υπάρχει. Τα 200px είναι το
+            // ελάχιστο που χωράει ολόκληρο ελληνικό ονοματεπώνυμο χωρίς «…»
+            // (μετρημένο: «Γιώργος Παπαδόπουλος» θέλει ~135px κειμένου) — σε οθόνη
+            // 1280px βγαίνουν 4 στήλες, δηλαδή 8 διανομείς σε 2 σειρές.
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+              {visibleDrivers.map(driver => {
+                const ageMin = signalAgeMin(driver);
+                const noSignal = ageMin > SIGNAL_FRESH_MIN;
+                const activeCount = acceptedOrders.filter(o => o.driver_id === driver.id).length;
 
-            <StatTile
-              Icon={Timer}
-              value={avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
-              label="Μ.Ο. χρόνος"
-              tint="var(--info)"
-              bg="var(--info-bg)"
-              border="var(--info-border)"
-              title="Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες"
-            />
+                // Ίδιος χρωματικός κώδικας με τους δείκτες του χάρτη: χρυσό =
+                // ελεύθερος, πράσινο = σε διανομή, γκρι = χωρίς σήμα.
+                let dotColor = 'var(--accent)';
+                let subText = 'Ελεύθερος';
+                let subColor = 'var(--text-secondary)';
 
-            <StatTile
-              Icon={Bike}
-              value={visibleDrivers.length}
-              label="Διανομείς σε βάρδια"
-              tint={visibleDrivers.length > 0 ? 'var(--accent)' : 'var(--text-muted)'}
-              bg={visibleDrivers.length > 0 ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}
-              border="var(--border-subtle)"
-              title="Διανομείς με σήμα τα τελευταία 20 λεπτά — όσοι φαίνονται και στον χάρτη"
-            />
+                if (noSignal) {
+                  dotColor = 'var(--map-offline)';
+                  subText = `Χωρίς σήμα: ${Math.floor(ageMin)} λ.`;
+                  subColor = 'var(--text-muted)';
+                } else if (activeCount > 0) {
+                  dotColor = 'var(--success)';
+                  subText = `Σε διανομή (${activeCount})`;
+                  subColor = 'var(--success)';
+                } else {
+                  const lastTime = lastCompletedTimes[driver.id];
+                  if (lastTime) {
+                    const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
+                    subText = `Ελεύθερος: ${diffMins} λ.`;
+                    subColor = diffMins > 10 ? 'var(--danger)' : 'var(--text-secondary)';
+                  }
+                }
 
-            <StatTile
-              Icon={Flame}
-              value={nowLoadText}
-              label="Αναμενόμενος φόρτος"
-              tint={NOW_LOAD_STYLE[nowLoadLevel].tint}
-              bg={NOW_LOAD_STYLE[nowLoadLevel].bg}
-              border={NOW_LOAD_STYLE[nowLoadLevel].border}
-              title={nowLoad === null
-                ? 'Δεν υπάρχουν ακόμη αρκετά δεδομένα για εκτίμηση'
-                : `${DOW_FULL[currentTime.getDay()]} ${String(currentTime.getHours()).padStart(2, '0')}:00–${String((currentTime.getHours() + 1) % 24).padStart(2, '0')}:00 · ιστορικά μ.ό. ${fmtLoad(nowLoad)} παραγγελίες`
-                  + (peakValue > 0 ? ` — ${Math.round(nowLoadRatio * 100)}% της σημερινής αιχμής` : '')}
-            />
-
-            <StatTile
-              Icon={TrendingUp}
-              value={peakHour !== null ? `${String(peakHour).padStart(2, '0')}:00` : '—'}
-              label="Ώρα αιχμής"
-              tint="var(--purple)"
-              bg="var(--purple-bg)"
-              border="var(--purple-border)"
-              title={peakHour !== null
-                ? `Ιστορικά η πιο φορτωμένη ώρα για σήμερα — μ.ό. ${peakValue >= 10 ? Math.round(peakValue) : peakValue.toFixed(1)} παραγγελίες`
-                : 'Δεν υπάρχουν ακόμη αρκετά δεδομένα'}
-            />
-          </div>
+                return (
+                  <DriverStripCard
+                    key={driver.id}
+                    driver={driver}
+                    dotColor={dotColor}
+                    subText={subText}
+                    subColor={subColor}
+                    battery={batteryVisual(driver.battery_level)}
+                    signalText={ageMin < 1 ? 'μόλις τώρα' : `πριν ${Math.floor(ageMin)} λ.`}
+                    deliveries={deliveriesToday[driver.id] || 0}
+                    onFocus={() => {
+                      setFocusTarget({ lat: driver.latitude, lng: driver.longitude, ts: Date.now() });
+                      mapWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ── Φόρτος (στη θέση των παλιών «Γρήγορων ενεργειών») ── */}
