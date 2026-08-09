@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase, getTenantSchema } from './supabaseClient';
 import {
   Building2, Bike, X, Plus, Save, Phone, Mail, Edit2, LogOut, MapPin,
-  AlertTriangle, Ban, ShieldCheck, RefreshCcw, Lock,
+  AlertTriangle, Ban, ShieldCheck, RefreshCcw, Lock, KeyRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
@@ -105,6 +105,27 @@ function Field({ label, hint, children }) {
 /** Ποσά με ελληνική μορφή: 1,50 και όχι 1.50. */
 function eur(v) {
   return Number(v || 0).toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Κλήση edge function με διαβάσιμο μήνυμα σφάλματος.
+ *
+ * Τα functions μας απαντούν 400 με `{ error }` στο σώμα, αλλά ο supabase-js
+ * σε non-2xx δίνει `data: null` και ένα γενικό «Edge Function returned a
+ * non-2xx status code» — το πραγματικό μήνυμα κρύβεται στο `error.context`.
+ */
+async function invokeAdminFn(name, body) {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) {
+    let message = error.message;
+    try {
+      const payload = await error.context?.json?.();
+      if (payload?.error) message = payload.error;
+    } catch { /* το σώμα δεν ήταν JSON — κρατάμε το γενικό μήνυμα */ }
+    return { error: message };
+  }
+  if (data?.error) return { error: data.error };
+  return { data };
 }
 
 export default function StoreManagement() {
@@ -480,6 +501,106 @@ function BlockButton({ blocked, onClick }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Λογαριασμός σύνδεσης — κοινό κομμάτι για καταστήματα και διανομείς
+// ════════════════════════════════════════════════════════════════════════════
+// Το email και ο κωδικός ζουν στο auth.users· στους πίνακες stores/drivers
+// υπάρχει μόνο ένα αντίγραφο του email για εμφάνιση. Ένα σκέτο UPDATE εδώ θα
+// άλλαζε το αντίγραφο και ο λογαριασμός θα έμενε ο παλιός — γι' αυτό η αλλαγή
+// περνάει από το edge function `update-user-admin` (service-role key).
+//
+// Ξεχωριστό κουμπί από την «Αποθήκευση» της καρτέλας επίτηδες: είναι άλλη
+// ενέργεια, με επιβεβαίωση, και δεν πρέπει να φεύγει κατά λάθος μαζί με μια
+// αλλαγή τηλεφώνου.
+function AccountSection({ kind, row, onChanged }) {
+  const isStore = kind === 'store';
+  const current = (row.email || '').trim();
+
+  const [email, setEmail] = useState(current);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const emailChanged = email.trim().toLowerCase() !== current.toLowerCase();
+  const passwordChanged = password.trim().length > 0;
+  const dirty = emailChanged || passwordChanged;
+
+  async function apply() {
+    const nextEmail = email.trim();
+
+    if (emailChanged && !/^\S+@\S+\.\S+$/.test(nextEmail)) {
+      toast.error('Μη έγκυρη μορφή email.');
+      return;
+    }
+    if (passwordChanged && password.trim().length < 6) {
+      toast.error('Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες.');
+      return;
+    }
+
+    const what = [emailChanged && 'το email', passwordChanged && 'ο κωδικός']
+      .filter(Boolean).join(' και ');
+    const ok = await confirmDialog(
+      `Θα αλλάξει ${what} σύνδεσης. ${isStore ? 'Το κατάστημα' : 'Ο διανομέας'} θα μπαίνει από εδώ και πέρα μόνο με τα νέα στοιχεία.`,
+      { title: 'Αλλαγή στοιχείων σύνδεσης', confirmLabel: 'Αλλαγή' }
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    const { error } = await invokeAdminFn('update-user-admin', {
+      userId: row.id,
+      role: isStore ? 'store' : 'driver',
+      ...(emailChanged ? { email: nextEmail } : {}),
+      ...(passwordChanged ? { password: password.trim() } : {}),
+    });
+    setBusy(false);
+
+    if (error) {
+      toast.error(`Η αλλαγή απέτυχε: ${error}`);
+      console.error('update-user-admin:', error);
+      return;
+    }
+
+    setPassword('');
+    toast.success('Τα στοιχεία σύνδεσης άλλαξαν.');
+    onChanged();
+  }
+
+  return (
+    <section className="p-4 space-y-4 card-surface" style={cardStyle}>
+      <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
+        <KeyRound size={16} /> Λογαριασμός σύνδεσης
+      </h3>
+
+      <Field label="Email (login)"
+             hint="Αυτό είναι το πραγματικό email σύνδεσης — η αλλαγή ισχύει αμέσως.">
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+          autoComplete="off"
+          className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+      </Field>
+
+      <Field label="Νέος κωδικός"
+             hint="Άφησέ το κενό για να μείνει ο ίδιος. Τουλάχιστον 6 χαρακτήρες.">
+        <input type="text" value={password} onChange={(e) => setPassword(e.target.value)}
+          placeholder="— χωρίς αλλαγή —" autoComplete="off"
+          className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+      </Field>
+
+      <button onClick={apply} disabled={busy || !dirty}
+        className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50"
+        style={accentBtn}>
+        <KeyRound size={16} /> {busy ? 'Αλλαγή…' : 'Αλλαγή στοιχείων σύνδεσης'}
+      </button>
+
+      {/* Η αλλαγή κωδικού δεν πετάει έξω μια ήδη ανοιχτή συνεδρία — το να το
+          κρύψουμε θα οδηγούσε τον διαχειριστή να νομίζει ότι απέτυχε. */}
+      <p className="text-[11px] m-0 leading-snug" style={{ color: 'var(--text-muted)' }}>
+        {isStore
+          ? 'Αν το κατάστημα είναι ήδη συνδεδεμένο, συνεχίζει κανονικά· τα νέα στοιχεία θα χρειαστούν στην επόμενη σύνδεση.'
+          : 'Αν ο διανομέας είναι ήδη συνδεδεμένος, συνεχίζει κανονικά. Για να μπει αμέσως με τα νέα στοιχεία, πάτησε και «Αποσύνδεση συσκευής».'}
+      </p>
+    </section>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Καρτέλα καταστήματος
 // ════════════════════════════════════════════════════════════════════════════
 function StoreDrawer({ store, onClose, onChanged }) {
@@ -569,16 +690,6 @@ function StoreDrawer({ store, onClose, onChanged }) {
           </Field>
         </div>
 
-        {/* Το email είναι το login του καταστήματος — αλλαγή εδώ θα άλλαζε μόνο
-            τον πίνακα, όχι τον λογαριασμό, και το μαγαζί δεν θα ξανάμπαινε. */}
-        <Field label="Email (login)" hint="Δεν αλλάζει από εδώ — είναι ο λογαριασμός σύνδεσης του καταστήματος.">
-          <div className="w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-               style={{ ...inputStyle, opacity: 0.75 }}>
-            <Lock size={13} style={{ color: 'var(--text-muted)' }} />
-            <span className="truncate">{store.email || '—'}</span>
-          </div>
-        </Field>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Χρέωση ανά παραγγελία (€)">
             <input type="number" step="0.10" min="0" value={form.delivery_fee}
@@ -598,6 +709,8 @@ function StoreDrawer({ store, onClose, onChanged }) {
           </Field>
         </div>
       </section>
+
+      <AccountSection kind="store" row={store} onChanged={onChanged} />
 
       <section className="p-4 space-y-4 card-surface" style={cardStyle}>
         <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
@@ -678,18 +791,18 @@ function CourierDrawer({ courier, now, onClose, onChanged }) {
   const [form, setForm] = useState(() => ({
     full_name: courier.full_name || '',
     phone: courier.phone || '',
-    email: courier.email || '',
   }));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Το email λείπει επίτηδες από εδώ: το χειρίζεται το AccountSection, που
+  // αλλάζει τον ίδιο τον λογαριασμό και μετά συγχρονίζει το drivers.email.
   async function save() {
     if (!form.full_name.trim()) { toast.error('Το ονοματεπώνυμο είναι υποχρεωτικό.'); return; }
     setSaving(true);
     const { error } = await supabase.from('drivers').update({
       full_name: form.full_name.trim(),
       phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
     }).eq('id', courier.id);
     setSaving(false);
 
@@ -748,17 +861,13 @@ function CourierDrawer({ courier, now, onClose, onChanged }) {
             className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
         </Field>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Τηλέφωνο">
-            <input value={form.phone} onChange={(e) => set('phone', e.target.value)}
-              className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
-          </Field>
-          <Field label="Email" hint="Μόνο για εμφάνιση — η σύνδεση γίνεται με τον λογαριασμό του.">
-            <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)}
-              className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
-          </Field>
-        </div>
+        <Field label="Τηλέφωνο">
+          <input value={form.phone} onChange={(e) => set('phone', e.target.value)}
+            className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+        </Field>
       </section>
+
+      <AccountSection kind="driver" row={courier} onChanged={onChanged} />
 
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={save} disabled={saving}
@@ -808,20 +917,12 @@ function CreateDrawer({ kind, onClose, onCreated }) {
       body.category = form.category || null;
     }
 
-    const { data, error } = await supabase.functions.invoke('create-user-admin', { body });
+    const { error } = await invokeAdminFn('create-user-admin', body);
     setSaving(false);
 
-    if (data?.error) {
-      toast.error(`Σφάλμα backend: ${data.error}`);
-      return;
-    }
     if (error) {
-      if (error.code === '42P01') {
-        toast.error("Πρέπει να δημιουργήσετε τον πίνακα 'drivers' στο Supabase πρώτα!");
-      } else {
-        toast.error(`Σφάλμα: ${error.message}`);
-      }
-      console.error(error);
+      toast.error(`Σφάλμα: ${error}`);
+      console.error('create-user-admin:', error);
       return;
     }
     toast.success(isStore ? 'Το κατάστημα δημιουργήθηκε επιτυχώς!' : 'Ο διανομέας δημιουργήθηκε επιτυχώς!');
