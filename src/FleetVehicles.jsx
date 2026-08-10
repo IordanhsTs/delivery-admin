@@ -3,14 +3,23 @@ import { supabase } from './supabaseClient';
 import { confirmDialog } from './ConfirmDialog';
 import {
   Bike, Plus, RefreshCcw, X, Save, Trash2, Wrench, ShieldCheck, ClipboardCheck,
-  Gauge, Route, User, AlertTriangle, StickyNote, Euro, Calendar, Archive,
+  Gauge, Route, User, AlertTriangle, StickyNote, Euro, Calendar, Archive, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // ── Στόλος εταιρικών μηχανών (αίτημα πελάτη 05/08/2026) ─────────────────────
-// Μία καρτέλα ανά μηχανάκι. Τα χιλιόμετρα ΔΕΝ πληκτρολογούνται: βγαίνουν από τις
-// βάρδιες που δήλωσαν οι διανομείς στο driver app, πάνω στο GPS του 0013.
+// Μία καρτέλα ανά μηχανάκι.
+//
+// ΑΠΟ ΠΟΥ ΕΡΧΟΝΤΑΙ ΤΑ ΧΙΛΙΟΜΕΤΡΑ (άλλαξε 10/08/2026): από το ΚΟΝΤΕΡ. Ο διανομέας
+// δηλώνει την ένδειξη όταν παίρνει τη μηχανή και όταν κλείνει τη βάρδια — η
+// διαφορά είναι τα χιλιόμετρα της βάρδιας. Πριν μετρούσε το GPS, που δεν γινόταν
+// ποτέ αρκετά ακριβές για χρέωση καυσίμων.
+//
+// ΔΥΟ ΔΙΑΦΟΡΕΤΙΚΑ ΝΟΥΜΕΡΑ, ΜΗΝ ΤΑ ΜΠΕΡΔΕΨΕΙΣ:
+//   • «Ένδειξη κοντέρ» (total_km) — τι δείχνει η μηχανή αυτή τη στιγμή.
+//   • «Χλμ σε βάρδιες» (shift_km) — όσα καταλογίστηκαν σε βάρδιες διανομέων.
+// Η διαφορά τους είναι ακριβώς τα χιλιόμετρα που έγιναν ΕΚΤΟΣ βάρδιας.
 //
 // ΓΙΑΤΙ ΟΛΟΙ ΟΙ ΥΠΟΛΟΓΙΣΜΟΙ ΕΡΧΟΝΤΑΙ ΑΠΟ ΤΟ `fleet_overview()`: το «πόσα χλμ
 // μέχρι το service» και το «πόσες μέρες ως τη λήξη» τα βγάζει η βάση. Αν τα
@@ -37,6 +46,28 @@ function fmtDate(s) {
   if (!s) return '—';
   const [y, m, d] = s.split('-');
   return `${d}/${m}/${y}`;
+}
+
+/** «10/08 στις 21:47» — πότε δηλώθηκε η ένδειξη του κοντέρ. */
+function fmtWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+    + ` στις ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Χιλιόμετρα χωρίς δεκαδικά, με ελληνικό διαχωριστή: «25.432». */
+function km(v) {
+  return Number(v || 0).toLocaleString('el-GR', { maximumFractionDigits: 0 });
+}
+
+/** Ποιος έδωσε την τελευταία ένδειξη — ο διανομέας, η διαχείριση, ή κανείς ακόμα. */
+function odometerBy(v) {
+  if (v.odometer_source === 'admin') return 'από τη διαχείριση';
+  if (v.odometer_by_name) return `από ${v.odometer_by_name}`;
+  if (v.odometer_source === 'base') return 'αρχική καταχώρηση';
+  return 'χωρίς δήλωση';
 }
 
 function num(v) {
@@ -120,23 +151,39 @@ function Field({ label, hint, children }) {
 
 export default function FleetVehicles() {
   const [rows, setRows] = useState([]);
+  const [odoAlerts, setOdoAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState(null);
 
   const fetchFleet = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc('fleet_overview');
-    if (error) {
-      console.error(error);
-      toast.error('Σφάλμα ανάκτησης στόλου: ' + error.message);
+    // Τα δύο μαζί: η λίστα των μηχανών και οι ανοιχτές ειδοποιήσεις χιλιομέτρων.
+    // Η δεύτερη είναι μικρή (μόνο ανεπίλυτες) και τη χρειάζονται ΚΑΙ η σύνοψη
+    // κορυφής ΚΑΙ η καρτέλα κάθε μηχανής — ένα αίτημα, δύο χρήσεις.
+    const [fleet, alerts] = await Promise.all([
+      supabase.rpc('fleet_overview'),
+      supabase.rpc('fleet_odometer_alerts'),
+    ]);
+    if (fleet.error) {
+      console.error(fleet.error);
+      toast.error('Σφάλμα ανάκτησης στόλου: ' + fleet.error.message);
       setRows([]);
     } else {
-      setRows(data || []);
+      setRows(fleet.data || []);
     }
+    // Οι ειδοποιήσεις δεν είναι λόγος να μη φανεί ο στόλος — σιωπηλή αποτυχία.
+    setOdoAlerts(alerts.error ? [] : (alerts.data || []));
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchFleet(); }, [fetchFleet]);
+
+  async function acknowledgeAlert(id) {
+    const { error } = await supabase.rpc('ack_odometer_alert', { p_id: id, p_note: null });
+    if (error) { toast.error('Δεν καταχωρήθηκε: ' + error.message); return; }
+    toast.success('Σημειώθηκε ως ελεγμένο.');
+    await fetchFleet();
+  }
 
   async function addVehicle() {
     // Ο κωδικός είναι το μόνο υποχρεωτικό: ο πελάτης θέλει να προσθέσει τη
@@ -192,7 +239,7 @@ export default function FleetVehicles() {
               Στόλος μηχανών
             </h1>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Χιλιόμετρα από τις βάρδιες των διανομέων — service, ασφάλεια, ΚΤΕΟ
+              Χιλιόμετρα από το κοντέρ που δηλώνουν οι διανομείς — service, ασφάλεια, ΚΤΕΟ
             </p>
           </div>
         </div>
@@ -229,6 +276,42 @@ export default function FleetVehicles() {
               {plural(alerts.kteo, 'ΚΤΕΟ λήγει', 'ΚΤΕΟ λήγουν')}
             </Pill>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* ── Χιλιόμετρα εκτός βάρδιας ─────────────────────────────────────── */}
+      {/* Η «δικλείδα ασφαλείας» του πελάτη (10/08/2026), σε ορατό σημείο: όταν ο
+          επόμενος διανομέας δηλώσει ένδειξη κοντέρ μεγαλύτερη από την τελευταία
+          καταγεγραμμένη και καμία βάρδια δεν τη δικαιολογεί, η διαφορά
+          εμφανίζεται εδώ ονομαστικά. Ο διαχειριστής το ερευνά και το κλείνει. */}
+      {odoAlerts.length ? (
+        <div className="p-4 mb-6 card-surface" style={{ ...cardStyle, borderColor: 'var(--danger-border)' }}>
+          <h3 className="font-bold text-sm flex items-center gap-2 mb-3" style={{ color: 'var(--danger)' }}>
+            <Gauge size={16} /> Χιλιόμετρα εκτός βάρδιας
+          </h3>
+          <ul className="space-y-2 list-none p-0 m-0">
+            {odoAlerts.map((a) => (
+              <li key={a.id}
+                  className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg"
+                  style={{ border: '1px solid var(--border-subtle)' }}>
+                <div className="min-w-0">
+                  <p className="m-0 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {a.kind === 'rollback'
+                      ? `${a.vehicle_code}: η ένδειξη γύρισε πίσω κατά ${km(Math.abs(a.gap_km))} χλμ`
+                      : `${a.vehicle_code}: ${km(a.gap_km)} χλμ χωρίς ανοιχτή βάρδια`}
+                  </p>
+                  <p className="m-0 text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    {km(a.previous_km)} → {km(a.declared_km)} χλμ · δηλώθηκε από {a.driver_name || '—'} · {fmtWhen(a.happened_at)}
+                  </p>
+                </div>
+                <button onClick={() => acknowledgeAlert(a.id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0"
+                  style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+                  <Check size={13} /> Το ερεύνησα
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -271,10 +354,10 @@ export default function FleetVehicles() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-xl font-black" style={{ color: 'var(--accent)' }}>
-                      {Number(v.total_km).toLocaleString('el-GR', { maximumFractionDigits: 0 })}
+                      {km(v.total_km)}
                     </div>
                     <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                      χλμ σύνολο
+                      χλμ κοντέρ
                     </div>
                   </div>
                 </div>
@@ -282,6 +365,14 @@ export default function FleetVehicles() {
                 {v.current_driver_name ? (
                   <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold" style={{ color: 'var(--success)' }}>
                     <User size={13} /> Σε χρήση: {v.current_driver_name}
+                  </div>
+                ) : null}
+
+                {Number(v.open_alerts) > 0 ? (
+                  <div className="mb-3">
+                    <Pill tone="danger" icon={Gauge}>
+                      {km(Math.abs(v.off_shift_km))} χλμ εκτός βάρδιας
+                    </Pill>
                   </div>
                 ) : null}
 
@@ -308,6 +399,8 @@ export default function FleetVehicles() {
         {open ? (
           <VehicleDetail
             vehicle={open}
+            alerts={odoAlerts.filter((a) => a.vehicle_id === open.id)}
+            onAck={acknowledgeAlert}
             onClose={() => setOpenId(null)}
             onChanged={fetchFleet}
           />
@@ -320,7 +413,7 @@ export default function FleetVehicles() {
 // ════════════════════════════════════════════════════════════════════════════
 // Η καρτέλα της μηχανής — συρτάρι από δεξιά
 // ════════════════════════════════════════════════════════════════════════════
-function VehicleDetail({ vehicle, onClose, onChanged }) {
+function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
   const [form, setForm] = useState(() => ({
     code: vehicle.code || '',
     plate: vehicle.plate || '',
@@ -338,8 +431,36 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState([]);
   const [notesLoading, setNotesLoading] = useState(true);
+  // Χειροκίνητη διόρθωση της ένδειξης: ο διαχειριστής στέκεται μπροστά στη μηχανή
+  // (π.χ. μετά από service ή όταν κανείς δεν δήλωσε ποτέ σωστά) και τη γράφει.
+  const [odoDraft, setOdoDraft] = useState('');
+  const [odoSaving, setOdoSaving] = useState(false);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function saveOdometer() {
+    const n = num(odoDraft);
+    if (n === null || !Number.isFinite(n) || n < 0) {
+      toast.error('Γράψε την ένδειξη του κοντέρ σε χιλιόμετρα.');
+      return;
+    }
+    setOdoSaving(true);
+    // Απευθείας στον πίνακα και όχι μέσω RPC: η χειροκίνητη διόρθωση ΔΕΝ πρέπει
+    // να δημιουργεί ειδοποίηση «εκτός βάρδιας» ούτε να κλείνει βάρδιες — είναι
+    // ακριβώς η ενέργεια με την οποία ο διαχειριστής ΛΥΝΕΙ τέτοιες διαφορές.
+    const { error } = await supabase.from('fleet_vehicles').update({
+      odometer_km: n,
+      odometer_at: new Date().toISOString(),
+      odometer_by: null,
+      odometer_source: 'admin',
+      updated_at: new Date().toISOString(),
+    }).eq('id', vehicle.id);
+    setOdoSaving(false);
+    if (error) { toast.error('Δεν αποθηκεύτηκε: ' + error.message); return; }
+    setOdoDraft('');
+    toast.success('Η ένδειξη του κοντέρ ενημερώθηκε.');
+    onChanged();
+  }
 
   const fetchNotes = useCallback(async () => {
     setNotesLoading(true);
@@ -444,12 +565,15 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
         </div>
 
         <div className="p-5 space-y-6">
-          {/* ── Τι λένε τα χιλιόμετρα ───────────────────────────────────── */}
+          {/* ── Τι λένε τα χιλιόμετρα ─────────────────────────────────────
+              «Ένδειξη κοντέρ» ≠ «χλμ σε βάρδιες»: το πρώτο είναι τι δείχνει η
+              μηχανή, το δεύτερο τι χρεώθηκε σε διανομείς. Η διαφορά τους είναι
+              τα χιλιόμετρα εκτός βάρδιας — γι' αυτό φαίνονται δίπλα-δίπλα. */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { icon: Route, label: 'Σύνολο χλμ', value: Number(vehicle.total_km).toLocaleString('el-GR', { maximumFractionDigits: 0 }), accent: true },
-              { icon: Gauge, label: 'Από GPS', value: Number(vehicle.gps_km).toLocaleString('el-GR', { maximumFractionDigits: 0 }) },
-              { icon: Wrench, label: 'Από το τελ. service', value: `${Number(vehicle.km_since_service).toLocaleString('el-GR', { maximumFractionDigits: 0 })} χλμ` },
+              { icon: Gauge, label: 'Ένδειξη κοντέρ', value: km(vehicle.total_km), accent: true },
+              { icon: Route, label: 'Χλμ σε βάρδιες', value: km(vehicle.shift_km) },
+              { icon: Wrench, label: 'Από το τελ. service', value: `${km(vehicle.km_since_service)} χλμ` },
               { icon: Calendar, label: 'Βάρδιες', value: vehicle.shifts },
             ].map((s) => (
               <div key={s.label} className="p-3 card-surface" style={cardStyle}>
@@ -474,6 +598,67 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
               <Pill tone="success" icon={User}>{vehicle.current_driver_name}</Pill>
             ) : null}
           </div>
+
+          {/* ── Χιλιομετρητής ───────────────────────────────────────────── */}
+          <section className="p-4 space-y-4 card-surface" style={cardStyle}>
+            <h3 className="font-bold text-sm flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Gauge size={16} /> Χιλιομετρητής
+            </h3>
+
+            <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+              <p className="m-0 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                Τελευταία ένδειξη
+              </p>
+              <p className="m-0 text-2xl font-black" style={{ color: 'var(--accent)' }}>
+                {km(vehicle.odometer_km)} <span className="text-sm font-bold" style={{ color: 'var(--text-muted)' }}>χλμ</span>
+              </p>
+              <p className="m-0 text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                {odometerBy(vehicle)} · {fmtWhen(vehicle.odometer_at)}
+              </p>
+            </div>
+
+            {alerts.length ? (
+              <ul className="space-y-2 list-none p-0 m-0">
+                {alerts.map((a) => (
+                  <li key={a.id} className="p-3 rounded-lg"
+                      style={{ border: '1px solid var(--danger-border)', backgroundColor: 'var(--danger-bg)' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="m-0 text-sm font-bold" style={{ color: 'var(--danger)' }}>
+                        {a.kind === 'rollback'
+                          ? `Η ένδειξη γύρισε πίσω κατά ${km(Math.abs(a.gap_km))} χλμ`
+                          : `${km(a.gap_km)} χλμ εκτός βάρδιας`}
+                      </p>
+                      <button onClick={() => onAck(a.id)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0"
+                        style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+                        <Check size={12} /> Το ερεύνησα
+                      </button>
+                    </div>
+                    <p className="m-0 text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                      {km(a.previous_km)} → {km(a.declared_km)} χλμ · δηλώθηκε από {a.driver_name || '—'} · {fmtWhen(a.happened_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <Field
+              label="Διόρθωση ένδειξης"
+              hint="Μόνο αν στέκεσαι μπροστά στο κοντέρ. Δεν δημιουργεί ειδοποίηση — αντίθετα, είναι ο τρόπος να κλείσει μια διαφορά."
+            >
+              <div className="flex gap-2">
+                <input type="number" step="1" min="0" value={odoDraft}
+                  onChange={(e) => setOdoDraft(e.target.value)}
+                  placeholder={String(Math.round(Number(vehicle.odometer_km || 0)))}
+                  className="flex-1 px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+                <button onClick={saveOdometer} disabled={odoSaving}
+                  className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50 shrink-0"
+                  style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))' }}>
+                  <Save size={15} /> {odoSaving ? 'Καταχώρηση…' : 'Καταχώρηση'}
+                </button>
+              </div>
+            </Field>
+          </section>
 
           {/* ── Στοιχεία μηχανής ────────────────────────────────────────── */}
           <section className="p-4 space-y-4 card-surface" style={cardStyle}>
@@ -500,7 +685,7 @@ function VehicleDetail({ vehicle, onClose, onChanged }) {
 
             <Field
               label="Χιλιόμετρα κοντέρ κατά την καταχώρηση"
-              hint="Τα χιλιόμετρα του GPS προστίθενται πάνω σε αυτόν τον αριθμό. Αν μείνει 0, η μηχανή μετράει σαν καινούργια."
+              hint="Ιστορικό στοιχείο: τι έδειχνε το κοντέρ όταν μπήκε η μηχανή στο σύστημα. Χρησιμοποιείται ως αφετηρία για το service όσο δεν έχει δηλωθεί τελευταίο service. Για την τρέχουσα ένδειξη χρησιμοποίησε τον «Χιλιομετρητή» παραπάνω."
             >
               <input type="number" step="1" min="0" value={form.odometer_base_km}
                 onChange={(e) => set('odometer_base_km', e.target.value)}
@@ -603,13 +788,14 @@ function NotesSection({ vehicle, notes, loading, onSaved }) {
     setSaving(true);
 
     const { data: sess } = await supabase.auth.getSession();
-    const km = num(atKm) ?? Number(vehicle.total_km);
+    // Χωρίς ρητό νούμερο, η σημείωση χρεώνεται στην τρέχουσα ένδειξη του κοντέρ.
+    const atKmValue = num(atKm) ?? Number(vehicle.total_km);
 
     const { error } = await supabase.from('vehicle_notes').insert({
       vehicle_id: vehicle.id,
       kind,
       body: body.trim(),
-      at_km: km,
+      at_km: atKmValue,
       cost: num(cost),
       happened_on: day,
       created_by: sess?.session?.user?.id ?? null,
@@ -623,7 +809,7 @@ function NotesSection({ vehicle, notes, loading, onSaved }) {
 
     if (kind === 'service' && resetService) {
       const { error: e2 } = await supabase.from('fleet_vehicles')
-        .update({ service_last_km: km, service_last_at: day, updated_at: new Date().toISOString() })
+        .update({ service_last_km: atKmValue, service_last_at: day, updated_at: new Date().toISOString() })
         .eq('id', vehicle.id);
       if (e2) toast.error('Η σημείωση μπήκε, αλλά ο μετρητής service δεν ενημερώθηκε: ' + e2.message);
     }

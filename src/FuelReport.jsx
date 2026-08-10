@@ -27,6 +27,10 @@ function addDays(date, n) {
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+// Ποιος μέτρησε τα χιλιόμετρα της βάρδιας. Το 'odometer' είναι ο τρόπος από
+// 10/08/2026· τα άλλα δύο επιβιώνουν σε ιστορικές βάρδιες μετρημένες με GPS.
+const SOURCE_LABELS = { odometer: 'κοντέρ', device: 'συσκευή', server: 'διακομιστής' };
+
 const GREEK_MONTHS = ['Ιαν', 'Φεβ', 'Μαρ', 'Απρ', 'Μαΐ', 'Ιουν', 'Ιουλ', 'Αυγ', 'Σεπ', 'Οκτ', 'Νοε', 'Δεκ'];
 function prettyRange(from, to) {
   const f = `${from.getDate()} ${GREEK_MONTHS[from.getMonth()]}`;
@@ -168,7 +172,7 @@ export default function FuelReport() {
               Χιλιόμετρα &amp; Καύσιμα
             </h1>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Πραγματική διαδρομή από το GPS — όχι άθροισμα παραγγελιών
+              Πραγματικά χιλιόμετρα από το κοντέρ — όχι άθροισμα παραγγελιών
             </p>
           </div>
         </div>
@@ -332,7 +336,7 @@ export default function FuelReport() {
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                         {Number(r.ping_count).toLocaleString('el-GR')} στίγματα
-                        {r.sources ? ` · ${r.sources === 'device' ? 'συσκευή' : r.sources === 'server' ? 'διακομιστής' : r.sources}` : ''}
+                        {r.sources ? ` · ${SOURCE_LABELS[r.sources] || r.sources}` : ''}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -397,12 +401,17 @@ export default function FuelReport() {
       {/* Δεν είναι διακοσμητική υποσημείωση: εξηγεί τι ακριβώς χρεώνεται στον
           διανομέα, οπότε πρέπει να διαβάζεται — text-secondary, όχι muted. */}
       <div className="mt-4 p-4 text-xs leading-relaxed card-surface" style={{ ...card, color: 'var(--text-secondary)' }}>
-        <strong style={{ color: 'var(--text-primary)' }}>Πώς υπολογίζεται:</strong> αθροίζεται η πραγματική
-        μετατόπιση από τα στίγματα GPS όσο ο διανομέας είναι συνδεδεμένος — άρα περιλαμβάνει επιστροφές,
-        κενές διαδρομές και προσωπικές βόλτες με τη μηχανή. Στίγματα κάτω από 20 μέτρα αγνοούνται ώστε ο
-        θόρυβος του GPS να μη φουσκώνει τα χιλιόμετρα σε στάση. Όταν χάνεται το σήμα, η διαδρομή
-        <strong> δεν</strong> συμπληρώνεται με ευθεία γραμμή: το νούμερο μπορεί να βγει μικρότερο του
-        πραγματικού, ποτέ μεγαλύτερο.
+        <strong style={{ color: 'var(--text-primary)' }}>Πώς υπολογίζεται (από 10/08/2026):</strong> από το
+        <strong> κοντέρ της μηχανής</strong>. Ο διανομέας δηλώνει την ένδειξη όταν παίρνει το μηχανάκι και
+        όταν κλείνει τη βάρδια· η διαφορά είναι τα χιλιόμετρα που χρεώνονται. Αν κάποιος ξεχάσει να δηλώσει
+        λήξη, τη βάρδιά του την κλείνει η επόμενη μέτρηση της ίδιας μηχανής — τα χιλιόμετρα δεν χάνονται.
+        Ανεξήγητες διαφορές εμφανίζονται ως «χιλιόμετρα εκτός βάρδιας» στην καρτέλα
+        <strong> Στόλος μηχανών</strong>.
+        <br /><br />
+        <span style={{ color: 'var(--text-muted)' }}>
+          Βάρδιες πριν από τις 10/08/2026 μετρήθηκαν με GPS (μετατόπιση από τα στίγματα, με απόρριψη
+          θορύβου κάτω από 20 μέτρα) και παραμένουν όπως καταγράφηκαν τότε.
+        </span>
       </div>
     </div>
   );
