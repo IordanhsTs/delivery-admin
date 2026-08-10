@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { supabase, isReadOnly } from './supabaseClient';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Wand2, Save, Send, Undo2,
@@ -364,6 +364,9 @@ export default function Schedule() {
   const coverage = useMemo(() => {
     const counts = Array.from({ length: 7 }, () => Array(48).fill(0));
     const names = Array.from({ length: 7 }, () => Array.from({ length: 48 }, () => []));
+    // Τα ids χωριστά από τα ονόματα: η προβολή ημέρας χρειάζεται να ξέρει ΠΟΙΟΣ
+    // είναι σε κάθε ώρα για να τον βάλει πάντα στην ίδια στήλη.
+    const ids = Array.from({ length: 7 }, () => Array.from({ length: 48 }, () => []));
 
     Object.entries(draft).forEach(([driverId, byDate]) => {
       const name = driverName(driverId);
@@ -376,6 +379,7 @@ export default function Schedule() {
             // Σπαστό ωράριο θα έβαζε το ίδιο όνομα δύο φορές στην ίδια ώρα μόνο
             // αν τα δύο διαστήματα επικαλύπτονταν — ο έλεγχος είναι φθηνός.
             if (!names[dayIndex][x].includes(name)) names[dayIndex][x].push(name);
+            if (!ids[dayIndex][x].includes(driverId)) ids[dayIndex][x].push(driverId);
           });
         });
       });
@@ -397,7 +401,7 @@ export default function Schedule() {
       return generic ? generic.min_drivers : 0;
     };
 
-    return { counts, names, minFor };
+    return { counts, names, ids, minFor };
   }, [draft, targets, dates, driverName]);
 
   // Κενά ΜΟΝΟ μέσα στο ωράριο λειτουργίας — μια ακάλυπτη 04:00 δεν είναι κενό,
@@ -432,6 +436,24 @@ export default function Schedule() {
 
   const notSubmitted = drivers.filter((d) => !submitted[d.id]);
   const visibleDays = focusDay === null ? [0, 1, 2, 3, 4, 5, 6] : [focusDay];
+
+  // ── Στήλες της προβολής ημέρας ────────────────────────────────────────────
+  // Ο κάθε διανομέας παίρνει ΤΗ ΔΙΚΗ ΤΟΥ στήλη για όλη την ημέρα. Χωρίς αυτό τα
+  // ονόματα στοίβαζαν αριστερά (flex-wrap) και στην επόμενη ώρα άλλος έπαιρνε τη
+  // θέση του — διαβάζοντας κατακόρυφα έβγαινε λάθος εικόνα για το ποιος δουλεύει.
+  // Σειρά: όποιος μπαίνει πρώτος στη βάρδια, πιο αριστερά.
+  const dayColumns = useMemo(() => {
+    if (focusDay === null) return [];
+    const firstHour = new Map();
+    hourCols.forEach((x) => {
+      coverage.ids[focusDay][x].forEach((id) => {
+        if (!firstHour.has(id)) firstHour.set(id, x);
+      });
+    });
+    return [...firstHour.entries()]
+      .sort((a, b) => a[1] - b[1] || driverName(a[0]).localeCompare(driverName(b[0]), 'el'))
+      .map(([id]) => id);
+  }, [focusDay, coverage, hourCols, driverName]);
 
   // ── Ρυθμίσεις ─────────────────────────────────────────────────────────────
   async function saveTarget(target) {
@@ -834,38 +856,61 @@ export default function Schedule() {
             ))}
           </div>
         ) : (
-          // ── Μία ημέρα, ώρα-ώρα, ΜΕ ΟΝΟΜΑΤΑ ─────────────────────────────
-          <div className="space-y-1">
+          // ── Μία ημέρα, ώρα-ώρα, ΜΕ ΟΝΟΜΑΤΑ ΣΕ ΣΤΗΛΕΣ ───────────────────
+          // Ένα ενιαίο grid για όλες τις ώρες: έτσι οι στήλες έχουν το ίδιο
+          // πλάτος σε κάθε γραμμή και ο κάθε διανομέας διαβάζεται κατακόρυφα.
+          <div
+            className="grid items-center"
+            style={{
+              gridTemplateColumns: `56px 44px repeat(${Math.max(1, dayColumns.length)}, minmax(96px, max-content))`,
+              columnGap: 8,
+              rowGap: 4,
+              width: 'max-content',
+              minWidth: '100%',
+            }}
+          >
             {hourCols.map((x) => {
               const have = coverage.counts[focusDay][x];
               const need = coverage.minFor(focusDay, x);
-              const who = coverage.names[focusDay][x];
+              const onDuty = coverage.ids[focusDay][x];
               const style = hourStyle(focusDay, x);
               return (
-                <div key={x} className="flex items-center gap-3">
-                  <div className="w-14 text-xs font-bold shrink-0 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                <Fragment key={x}>
+                  <div className="text-xs font-bold tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                     {hourLabel(x)}
                   </div>
-                  <div className="w-11 h-6 rounded flex items-center justify-center text-[11px] font-bold shrink-0"
+                  <div className="h-6 rounded flex items-center justify-center text-[11px] font-bold"
                        style={{ ...style, border: '1px solid var(--border-subtle)' }}>
                     {need ? `${have}/${need}` : have || ''}
                   </div>
-                  <div className="flex flex-wrap gap-1.5 min-w-0">
-                    {who.length ? who.map((n) => (
-                      // Χρυσό κείμενο πάνω σε χρυσό φόντο δίνει contrast 2.2 στο
-                      // ανοιχτό θέμα — τα ονόματα είναι ΤΟ ζητούμενο εδώ, οπότε
-                      // παίρνουν το κανονικό χρώμα κειμένου.
-                      <span key={n} className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
-                            style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--text-primary)' }}>
-                        {n}
-                      </span>
-                    )) : (
-                      <span className="text-[11px]" style={{ color: need ? 'var(--danger)' : 'var(--text-muted)' }}>
-                        {need ? 'ακάλυπτη ώρα' : 'κανείς'}
-                      </span>
-                    )}
-                  </div>
-                </div>
+
+                  {onDuty.length === 0 ? (
+                    <div className="text-[11px]"
+                         style={{ gridColumn: `span ${Math.max(1, dayColumns.length)}`, color: need ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {need ? 'ακάλυπτη ώρα' : 'κανείς'}
+                    </div>
+                  ) : (
+                    dayColumns.map((id) => (
+                      onDuty.includes(id) ? (
+                        // Χρυσό κείμενο πάνω σε χρυσό φόντο δίνει contrast 2.2 στο
+                        // ανοιχτό θέμα — τα ονόματα είναι ΤΟ ζητούμενο εδώ, οπότε
+                        // παίρνουν το κανονικό χρώμα κειμένου.
+                        <div key={id} className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-center truncate"
+                             style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--text-primary)' }}
+                             title={driverName(id)}>
+                          {driverName(id)}
+                        </div>
+                      ) : (
+                        // Κενό κελί — όχι κενός χώρος: η στήλη πρέπει να φαίνεται
+                        // ότι συνεχίζει, αλλιώς το μάτι ξαναενώνει τα ονόματα.
+                        <div key={id} className="py-0.5 text-[11px] text-center leading-none"
+                             style={{ color: 'var(--border-default)' }}>
+                          ·
+                        </div>
+                      )
+                    ))
+                  )}
+                </Fragment>
               );
             })}
           </div>
