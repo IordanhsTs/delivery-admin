@@ -119,6 +119,23 @@ const MoreIcon = () => (
   </svg>
 );
 
+// Χάμπουργκερ: εμφανίζεται πάνω αριστερά στον χάρτη όταν το μενού είναι μαζεμένο.
+const MenuIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+  </svg>
+);
+
+// «Μάζεψε το μενού» — ίδιο εικονίδιο λογικής με το panel-left-close του lucide.
+const PanelLeftCloseIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2"/>
+    <path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>
+  </svg>
+);
+
 const CalendarIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -201,8 +218,18 @@ export default function App() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('map');
   const [moreOpen, setMoreOpen] = useState(false);
+  // ΜΕΝΟΥ ΑΝΑΔΥΟΜΕΝΟ ΣΤΟΝ ΧΑΡΤΗ (desktop): στον χάρτη το μενού είναι μαζεμένο και
+  // βγαίνει με το κουμπί πάνω αριστερά — ο χώρος που περισσεύει πάει στη δεξιά στήλη,
+  // ώστε «Ενεργές» και «Αποδεκτές» να χωρέσουν δίπλα-δίπλα. Όσο είναι ανοιχτό, η
+  // οθόνη δείχνει ακριβώς ό,τι έδειχνε και πριν (μία στήλη).
+  // Δεν αποθηκεύεται: κάθε φορά που ο χρήστης γυρίζει στον χάρτη ξεκινά μαζεμένο, ενώ
+  // σε ΚΑΘΕ άλλη καρτέλα το μενού είναι πάντα καρφωμένο αριστερά όπως πάντα.
+  const [navOpenOnMap, setNavOpenOnMap] = useState(false);
 
   const isDark = theme === 'dark';
+  const navHidden = activeTab === 'map' && !navOpenOnMap;
+  // Κάθε πλοήγηση κλείνει το αναδυόμενο: αν γυρίσουμε στον χάρτη, τον θέλουμε πάλι φαρδύ.
+  const goToTab = (id) => { setActiveTab(id); setNavOpenOnMap(false); };
 
   useEffect(() => {
     // Διαβάζει τα claims από το JWT (ίδιο μοτίβο με το applyTenantFromSession).
@@ -325,7 +352,11 @@ export default function App() {
           SIDEBAR
       ══════════════════════════════ */}
       <div
-        className="w-full md:w-64 shrink-0 flex flex-col z-10 border-r card-surface sidebar-gold"
+        className={
+          'w-full shrink-0 flex flex-col z-10 border-r card-surface sidebar-gold ' +
+          'md:transition-[width] md:duration-300 md:ease-out ' +
+          (navHidden ? 'md:w-0 md:overflow-hidden md:border-r-0' : 'md:w-64')
+        }
         style={{
           backgroundColor: 'var(--bg-card)',
           borderColor: 'var(--border-default)',
@@ -456,6 +487,27 @@ export default function App() {
               </p>
             </div>
           </button>
+
+          {/* Μάζεμα του μενού — μόνο στον χάρτη, εκεί που κερδίζει χώρο η δεξιά στήλη */}
+          {activeTab === 'map' && (
+            <button
+              type="button"
+              onClick={() => setNavOpenOnMap(false)}
+              className="shrink-0 p-1.5 rounded-lg transition-all duration-150"
+              style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = 'var(--accent-muted)';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-muted)';
+              }}
+              title="Απόκρυψη μενού — περισσότερος χώρος για τις παραγγελίες"
+            >
+              <PanelLeftCloseIcon />
+            </button>
+          )}
         </div>
 
         {/* Nav items */}
@@ -463,7 +515,7 @@ export default function App() {
           {NAV_ITEMS.map(({ id, Icon, shortLabel, fullLabel }) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
+              onClick={() => goToTab(id)}
               className="relative flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
               style={getNavStyle(id)}
               onMouseEnter={e => {
@@ -611,8 +663,31 @@ export default function App() {
           {/* Μόνιμα mounted: κρύβεται με CSS αντί να ξηλώνεται, ώστε να μη χάνει θέση/zoom
               και να μην ξανατρέχει fetch+subscriptions κάθε φορά που φεύγεις απ' την καρτέλα. */}
           <div className={activeTab === 'map' ? 'h-full' : 'hidden'}>
-            <LiveMap />
+            <LiveMap navHidden={navHidden} />
           </div>
+
+          {/* Κουμπί «Μενού»: το μόνο που μένει ορατό όταν η μπάρα είναι μαζεμένη.
+              Κάθεται πάνω στην πάνω-αριστερή γωνία του χάρτη (το zoom control ζει
+              κάτω αριστερά, οπότε δεν πατάει τίποτα). */}
+          {navHidden && (
+            <button
+              type="button"
+              onClick={() => setNavOpenOnMap(true)}
+              className="hidden md:flex absolute top-3 left-3 z-[1100] w-11 h-11 rounded-xl items-center justify-center transition-transform duration-150 hover:scale-105 active:scale-95"
+              // Ίδιο χρυσό και ίδιο μαύρο μελάνι με το `.sidebar-gold`: το κουμπί
+              // διαβάζεται ως «κομμάτι του μενού που ξεπροβάλλει». Άσπρο εικονίδιο
+              // πάνω στο χρυσό έπιανε μόλις 2.2:1 — το μαύρο μελάνι πιάνει 7.0:1.
+              style={{
+                background: '#C5A066',
+                color: '#1E1A14',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
+              }}
+              title="Άνοιγμα μενού"
+              aria-label="Άνοιγμα μενού"
+            >
+              <MenuIcon />
+            </button>
+          )}
           {activeTab !== 'map' && (
             <AnimatePresence mode="wait">
               <motion.div

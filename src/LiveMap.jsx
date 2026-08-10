@@ -300,9 +300,16 @@ function RailEmpty({ Icon, children }) {
   );
 }
 
-export default function LiveMap() {
+// `navHidden`: το αριστερό μενού είναι μαζεμένο, άρα περισσεύουν ~256px. Τα δίνουμε
+// στη δεξιά στήλη ώστε «Ενεργές» και «Αποδεκτές» να κάθονται δίπλα-δίπλα αντί η μία
+// κάτω από την άλλη. Μόνο από xl (≥1280px) και πάνω — σε μικρότερο laptop η στήλη
+// των 620px θα έτρωγε τον χάρτη.
+export default function LiveMap({ navHidden = false }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  // Γραμμένα ολόκληρα (όχι με template) γιατί ο JIT του Tailwind ψάχνει τη συμβολοσειρά αυτούσια.
+  const railWidthClass = navHidden ? 'md:w-[340px] xl:w-[640px]' : 'md:w-[340px]';
 
   const mapFilter = 'none';
   const [drivers, setDrivers] = useState([]);
@@ -1000,7 +1007,7 @@ export default function LiveMap() {
 
         {/* ── Δεξιά στήλη: μόνιμο πάνελ εργασίας ── */}
         <aside
-          className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-3 space-y-3"
+          className={`w-full ${railWidthClass} shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-3 space-y-3 transition-[width] duration-300 ease-out`}
           style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}
         >
           {/* Προγραμματισμένες (καθυστερημένη αποστολή από το κατάστημα) */}
@@ -1057,6 +1064,11 @@ export default function LiveMap() {
             </RailSection>
           )}
 
+          {/* «Ενεργές» + «Αποδεκτές»: δίπλα-δίπλα όταν το μενού είναι μαζεμένο (και
+              μόνο σε ≥1280px), αλλιώς η μία κάτω από την άλλη όπως πάντα. Το
+              `items-start` κρατά κάθε στήλη στο ύψος που της αναλογεί — χωρίς αυτό
+              η άδεια στήλη τεντωνόταν στο ύψος της γεμάτης. */}
+          <div className={navHidden ? 'grid gap-3 items-start xl:grid-cols-2' : 'space-y-3'}>
           {/* Εκκρεμείς→Ενεργές (client feedback 08/08: μετονομασία καρτελών) */}
           <RailSection Icon={Package} title="Ενεργές" count={pendingOrders.length} tint="var(--accent)">
             {pendingOrders.length === 0 ? (
@@ -1364,6 +1376,7 @@ export default function LiveMap() {
               </AnimatePresence>
             )}
           </RailSection>
+          </div>
 
           {/* Σήμερα με μια ματιά — client feedback 08/09: αντάλλαξε θέση με τους
               διανομείς. Τα πλακίδια είναι σύνοψη και χωράνε άνετα 2×2 στα 340px,
@@ -1509,7 +1522,7 @@ export default function LiveMap() {
 
         {/* ── Φόρτος (στη θέση των παλιών «Γρήγορων ενεργειών») ── */}
         <div
-          className="w-full md:w-[340px] shrink-0 border-t md:border-t-0 md:border-l"
+          className={`w-full ${railWidthClass} shrink-0 border-t md:border-t-0 md:border-l transition-[width] duration-300 ease-out`}
           style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-sidebar)' }}
         >
           <WorkloadChart
