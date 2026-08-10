@@ -218,18 +218,18 @@ export default function App() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('map');
   const [moreOpen, setMoreOpen] = useState(false);
-  // ΜΕΝΟΥ ΑΝΑΔΥΟΜΕΝΟ ΣΤΟΝ ΧΑΡΤΗ (desktop): στον χάρτη το μενού είναι μαζεμένο και
-  // βγαίνει με το κουμπί πάνω αριστερά — ο χώρος που περισσεύει πάει στη δεξιά στήλη,
-  // ώστε «Ενεργές» και «Αποδεκτές» να χωρέσουν δίπλα-δίπλα. Όσο είναι ανοιχτό, η
-  // οθόνη δείχνει ακριβώς ό,τι έδειχνε και πριν (μία στήλη).
-  // Δεν αποθηκεύεται: κάθε φορά που ο χρήστης γυρίζει στον χάρτη ξεκινά μαζεμένο, ενώ
-  // σε ΚΑΘΕ άλλη καρτέλα το μενού είναι πάντα καρφωμένο αριστερά όπως πάντα.
-  const [navOpenOnMap, setNavOpenOnMap] = useState(false);
+  // ΜΕΝΟΥ ΑΝΑΔΥΟΜΕΝΟ ΣΤΟΝ ΧΑΡΤΗ (desktop): στον χάρτη το μενού μαζεύεται με το κουμπί
+  // της μπάρας και ο χώρος που περισσεύει πάει στη δεξιά στήλη, ώστε «Ενεργές» και
+  // «Αποδεκτές» να χωρέσουν δίπλα-δίπλα. Όσο είναι ανοιχτό, η οθόνη δείχνει ακριβώς
+  // ό,τι έδειχνε και πριν (μία στήλη).
+  // ΞΕΚΙΝΑ ΑΝΟΙΧΤΟ (αίτημα χρήστη): κάθε refresh βρίσκει τη γνώριμη οθόνη με το μενού
+  // στη θέση του. Από κει και πέρα η επιλογή κρατάει όσο ζει η σελίδα — δεν
+  // ξαναπετάγεται ούτε ξαναμαζεύεται μόνο του σε κάθε αλλαγή καρτέλας. Δεν
+  // αποθηκεύεται πουθενά, και σε ΚΑΘΕ άλλη καρτέλα το μενού είναι πάντα καρφωμένο.
+  const [navOpenOnMap, setNavOpenOnMap] = useState(true);
 
   const isDark = theme === 'dark';
   const navHidden = activeTab === 'map' && !navOpenOnMap;
-  // Κάθε πλοήγηση κλείνει το αναδυόμενο: αν γυρίσουμε στον χάρτη, τον θέλουμε πάλι φαρδύ.
-  const goToTab = (id) => { setActiveTab(id); setNavOpenOnMap(false); };
 
   useEffect(() => {
     // Διαβάζει τα claims από το JWT (ίδιο μοτίβο με το applyTenantFromSession).
@@ -515,7 +515,7 @@ export default function App() {
           {NAV_ITEMS.map(({ id, Icon, shortLabel, fullLabel }) => (
             <button
               key={id}
-              onClick={() => goToTab(id)}
+              onClick={() => setActiveTab(id)}
               className="relative flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
               style={getNavStyle(id)}
               onMouseEnter={e => {
