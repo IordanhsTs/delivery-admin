@@ -600,6 +600,55 @@ function AccountSection({ kind, row, onChanged }) {
   );
 }
 
+// ── PIN κιόσκ (ταμείο διανομέων, migration 0021) ────────────────────────────
+// Write-only, ίδια στάση με τον κωδικό λογαριασμού στο AccountSection: δεν
+// υπάρχει «δες το τρέχον PIN» — μόνο ορισμός/επαναφορά. Ζει σε δικό του RPC
+// (admin_set_driver_pin) που κάνει hash server-side· το hash δεν εκτίθεται
+// ποτέ σε κανέναν client, ούτε στο admin.
+function KioskPinSection({ driverId, onChanged }) {
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function apply() {
+    if (!/^\d{4}$/.test(pin)) {
+      toast.error('Το PIN πρέπει να είναι ακριβώς 4 ψηφία.');
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.rpc('admin_set_driver_pin', {
+      p_driver_id: driverId, p_pin: pin,
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(`Το PIN δεν αποθηκεύτηκε: ${error.message}`);
+      return;
+    }
+    setPin('');
+    toast.success('Το PIN του κιόσκ ορίστηκε.');
+    onChanged();
+  }
+
+  return (
+    <section className="p-4 space-y-3 card-surface" style={cardStyle}>
+      <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
+        <KeyRound size={16} /> PIN κιόσκ ταμείου
+      </h3>
+      <Field label="Νέο PIN (4 ψηφία)"
+             hint="Το χρησιμοποιεί ο διανομέας στο ταμπλέτ του ταμείου για να ταυτοποιηθεί — άσχετο από τον κωδικό σύνδεσης.">
+        <input type="text" inputMode="numeric" maxLength={4} value={pin} autoComplete="off"
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="— χωρίς ορισμό —"
+          className="w-28 px-3 py-2 rounded-lg outline-none text-sm tracking-[0.3em]" style={inputStyle} />
+      </Field>
+      <button onClick={apply} disabled={busy || pin.length !== 4}
+        className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50"
+        style={accentBtn}>
+        <KeyRound size={16} /> {busy ? 'Αποθήκευση…' : 'Ορισμός PIN'}
+      </button>
+    </section>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Καρτέλα καταστήματος
 // ════════════════════════════════════════════════════════════════════════════
@@ -868,6 +917,8 @@ function CourierDrawer({ courier, now, onClose, onChanged }) {
       </section>
 
       <AccountSection kind="driver" row={courier} onChanged={onChanged} />
+
+      <KioskPinSection driverId={courier.id} onChanged={onChanged} />
 
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={save} disabled={saving}

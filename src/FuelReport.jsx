@@ -120,8 +120,9 @@ export default function FuelReport() {
       hours: a.hours + Number(r.hours),
       liters: a.liters + Number(r.liters),
       cost: a.cost + Number(r.fuel_cost),
+      ownPaid: a.ownPaid + Number(r.own_paid_fuel || 0),
     }),
-    { km: 0, hours: 0, liters: 0, cost: 0 }
+    { km: 0, hours: 0, liters: 0, cost: 0, ownPaid: 0 }
   );
 
   function exportExcel() {
@@ -134,6 +135,7 @@ export default function FuelReport() {
       'Κατανάλωση (L/100km)': Number(r.l_per_100km).toFixed(2),
       'Λίτρα': Number(r.liters).toFixed(2),
       'Κόστος (€)': Number(r.fuel_cost).toFixed(2),
+      'Πλήρωσε ο ίδιος (€)': Number(r.own_paid_fuel || 0).toFixed(2),
     }));
     data.push({
       'Διανομέας': 'ΣΥΝΟΛΟ',
@@ -143,6 +145,7 @@ export default function FuelReport() {
       'Κατανάλωση (L/100km)': '',
       'Λίτρα': totals.liters.toFixed(2),
       'Κόστος (€)': totals.cost.toFixed(2),
+      'Πλήρωσε ο ίδιος (€)': totals.ownPaid.toFixed(2),
     });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -294,10 +297,10 @@ export default function FuelReport() {
       {/* ── Πίνακας ανά διανομέα ────────────────────────────────────────── */}
       <div style={card} className="overflow-hidden card-surface">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 760 }}>
+          <table className="w-full text-sm" style={{ minWidth: 880 }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-tertiary)' }}>
-                {['Διανομέας', 'Χιλιόμετρα', 'Βάρδιες', 'Ώρες', 'L/100χλμ', 'Λίτρα', 'Κόστος', ''].map((h, i) => (
+                {['Διανομέας', 'Χιλιόμετρα', 'Βάρδιες', 'Ώρες', 'L/100χλμ', 'Λίτρα', 'Κόστος', 'Πλήρωσε ο ίδιος', ''].map((h, i) => (
                   <th key={h + i}
                     className={`px-4 py-3 font-bold text-xs uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}
                     style={{ color: 'var(--text-secondary)' }}>
@@ -308,13 +311,13 @@ export default function FuelReport() {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                <tr><td colSpan={9} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
                   Φόρτωση…
                 </td></tr>
               )}
 
               {!loading && !active.length && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                <tr><td colSpan={9} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
                   Καμία καταγεγραμμένη διαδρομή αυτή την εβδομάδα.
                 </td></tr>
               )}
@@ -365,6 +368,10 @@ export default function FuelReport() {
                     <td className="px-4 py-3 text-right font-black" style={{ color: 'var(--accent)' }}>
                       {Number(r.fuel_cost).toFixed(2)} €
                     </td>
+                    <td className="px-4 py-3 text-right" style={{ color: 'var(--text-secondary)' }}
+                      title="Όσα δήλωσε ο ίδιος ότι πλήρωσε για βενζίνη, από το κιόσκ του ταμείου — ανεξάρτητο από τον παραπάνω υπολογισμό.">
+                      {Number(r.own_paid_fuel || 0).toFixed(2)} €
+                    </td>
                     <td className="px-2" />
                   </tr>
                 );
@@ -388,6 +395,9 @@ export default function FuelReport() {
                   </td>
                   <td className="px-4 py-3 text-right font-black" style={{ color: 'var(--accent)' }}>
                     {totals.cost.toFixed(2)} €
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold" style={{ color: 'var(--text-secondary)' }}>
+                    {totals.ownPaid.toFixed(2)} €
                   </td>
                   <td className="px-2" />
                 </tr>

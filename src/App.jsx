@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { Wallet } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext.jsx';
 import BillingDashboard from './BillingDashboard';
 import FuelReport from './FuelReport';
 import FleetVehicles from './FleetVehicles';
+import CashFloat from './CashFloat';
+import { useCashFloat } from './useCashFloat';
 import Schedule from './Schedule';
 import Announcements from './Announcements';
 import LiveMap from './LiveMap';
@@ -162,6 +165,11 @@ const BikeIcon = () => (
   </svg>
 );
 
+// Μοναδικό εικονίδιο δανεισμένο απευθείας από lucide-react (αντί για inline
+// SVG σαν τα υπόλοιπα) — το πακέτο είναι ήδη dependency της εφαρμογής, οπότε
+// δεν αξίζει να αντιγραφεί με το χέρι το ίδιο glyph.
+const WalletIcon = () => <Wallet size={20} />;
+
 const NAV_ITEMS = [
   { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
   { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
@@ -171,6 +179,7 @@ const NAV_ITEMS = [
   { id: 'announcements',Icon: MegaphoneIcon, shortLabel: 'Ανακοιν.',  fullLabel: 'Ανακοινώσεις' },
   { id: 'billing',      Icon: ReceiptIcon,  shortLabel: 'Εκκαθάριση', fullLabel: 'Εκκαθάριση' },
   { id: 'fuel',         Icon: FuelIcon,     shortLabel: 'Καύσιμα',    fullLabel: 'Χιλιόμετρα & Καύσιμα' },
+  { id: 'cash-float',   Icon: WalletIcon,   shortLabel: 'Ταμείο',     fullLabel: 'Ταμείο' },
   { id: 'fleet',        Icon: BikeIcon,     shortLabel: 'Μηχανές',    fullLabel: 'Στόλος μηχανών' },
   { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
   { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
@@ -191,6 +200,7 @@ const VIEW_COMPONENTS = {
   'announcements': <Announcements />,
   'billing':       <BillingDashboard />,
   'fuel':          <FuelReport />,
+  'cash-float':    <CashFloat />,
   'fleet':         <FleetVehicles />,
   'stores':        <StoreManagement />,
   'stats':         <Statistics />,
@@ -209,6 +219,21 @@ function UnreadMessagesBadge() {
     >
       {unreadCount}
     </span>
+  );
+}
+
+// Κόκκινη κουκκίδα (χωρίς αριθμό, ίδιο πνεύμα με το UnreadMessagesBadge) όταν
+// το ταμείο πέσει κάτω από το όριο ειδοποίησης — ζει σε δικό του component για
+// τον ίδιο λόγο: το realtime subscription στήνεται ΜΟΝΟ μετά το login.
+function LowCashFloatBadge() {
+  const { isLow } = useCashFloat();
+  if (!isLow) return null;
+  return (
+    <span
+      className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full"
+      style={{ backgroundColor: 'var(--danger)' }}
+      title="Το ταμείο έπεσε κάτω από το όριο ειδοποίησης"
+    />
   );
 }
 
@@ -390,6 +415,7 @@ export default function App() {
                 >
                   <Icon />
                   {id === 'messages' && <UnreadMessagesBadge />}
+                  {id === 'cash-float' && <LowCashFloatBadge />}
                   <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
                 </button>
               ))}
@@ -534,6 +560,7 @@ export default function App() {
               <span className="relative flex items-center">
                 <Icon />
                 {id === 'messages' && <UnreadMessagesBadge />}
+                {id === 'cash-float' && <LowCashFloatBadge />}
               </span>
               <span className="text-[10px] md:text-sm font-semibold leading-none">
                 <span className="md:hidden">{shortLabel}</span>
