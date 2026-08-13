@@ -306,20 +306,13 @@ html.dark .hover-row-glass:hover {
   background-color: #1E2840 !important;
 }
 
-/* Sidebar πλοήγησης (App.jsx) — χρυσό φόντο με μαύρα γράμματα σε desktop, ώστε να
-   ξεχωρίζει καθαρά από τον χάρτη/περιεχόμενο δίπλα του αντί να «ενώνεται» μαζί του
-   (client feedback 08-09). Μόνο md+ (desktop) — στο mobile η πάνω μπάρα μένει
-   όπως ήταν. */
+/* Sidebar πλοήγησης (App.jsx) — client feedback 08/14: πίσω σε άσπρο σε light
+   mode (η χρυσή πλάκα του 08-09 ανατράπηκε) — απλά το κανονικό --bg-card, καμία
+   ειδική μεταχείριση tokens πια. Μόνο md+ (desktop) — στο mobile η πάνω μπάρα
+   μένει όπως ήταν. */
 @media (min-width: 768px) {
   .sidebar-gold {
-    background: #C5A066 !important;
-    --text-primary:   #1E1A14 !important;
-    --text-secondary: #1E1A14 !important;
-    --text-muted:     #3A3128 !important;
-    --border-default: rgba(30,26,20,0.20) !important;
-    --accent:         #1E1A14 !important;
-    --accent-hover:   #2A2520 !important;
-    --accent-muted:   rgba(30,26,20,0.14) !important;
+    background: var(--bg-card) !important;
   }
   /* Σε dark mode ΟΧΙ χρυσή πλάκα (client feedback 08/13): το μενού είναι navy σαν
      τα υπόλοιπα πάνελ και το χρυσό μένει μόνο στο ενεργό στοιχείο. Ο διαχωρισμός

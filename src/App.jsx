@@ -702,13 +702,13 @@ export default function App() {
               onClick={() => setNavOpenOnMap(true)}
               className="hidden md:flex absolute top-3 left-3 z-[1100] w-11 h-11 rounded-xl items-center justify-center transition-transform duration-150 hover:scale-105 active:scale-95"
               // Ακολουθεί το `.sidebar-gold`, ώστε το κουμπί να διαβάζεται ως
-              // «κομμάτι του μενού που ξεπροβάλλει»: χρυσό με μαύρο μελάνι σε light
-              // (άσπρο εικονίδιο στο χρυσό έπιανε μόλις 2.2:1, το μαύρο 7.0:1), navy
-              // με ανοιχτό μελάνι σε dark — εκεί το μενού δεν είναι πια χρυσό.
+              // «κομμάτι του μενού που ξεπροβάλλει»: άσπρο με σκούρο μελάνι σε
+              // light (client feedback 08/14 — το μενού δεν είναι πια χρυσό εκεί),
+              // navy με ανοιχτό μελάνι σε dark.
               style={{
-                background: isDark ? '#0E1524' : '#C5A066',
+                background: isDark ? '#0E1524' : '#FFFFFF',
                 color: isDark ? '#EAF0FA' : '#1E1A14',
-                border: isDark ? '1px solid #26314A' : 'none',
+                border: isDark ? '1px solid #26314A' : '1px solid #E5DED4',
                 boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
               }}
               title="Άνοιγμα μενού"

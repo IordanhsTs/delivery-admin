@@ -100,16 +100,49 @@ function MapCenterHandler({ center }) {
 
 // «Προβολή στο χάρτη»: κεντράρει τον χάρτη στον διανομέα που διάλεξε ο χρήστης.
 // Το `target` αλλάζει ταυτότητα σε κάθε κλικ (κρατά timestamp), ώστε να δουλεύει
-// και δεύτερο κλικ στον ίδιο διανομέα αφού ο χρήστης μετακινήσει τον χάρτη. Η
-// Google δεν έχει animated flyTo με ρυθμιζόμενη διάρκεια σαν το Leaflet — το
-// panTo κάνει ήδη ομαλό pan από μόνο του σε κοντινές αποστάσεις.
+// και δεύτερο κλικ στον ίδιο διανομέα αφού ο χρήστης μετακινήσει τον χάρτη.
+//
+// Client feedback 08/14: το πρώτο πέρασμα έκανε panTo+setZoom μαζί — αλλά η
+// Google ακυρώνει το ομαλό pan όταν το zoom αλλάζει ταυτόχρονα (instant jump
+// αντί για «ταξίδι»). Λύση: χειροκίνητο tween με moveCamera + requestAnimationFrame
+// (το επίσημο μοτίβο της Google για custom camera animation), ίδια αίσθηση με
+// το παλιό Leaflet flyTo (0.8s, ease-out).
 function MapFocusHandler({ target }) {
   const map = useMap();
+  const rafRef = useRef(null);
+
   useEffect(() => {
     if (!map || !target) return;
-    map.panTo({ lat: target.lat, lng: target.lng });
-    map.setZoom(Math.max(map.getZoom(), 16));
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    const fromCenter = map.getCenter();
+    const fromLat = fromCenter.lat();
+    const fromLng = fromCenter.lng();
+    const fromZoom = map.getZoom();
+    const toZoom = Math.max(fromZoom, 16);
+    const duration = 800;
+    const start = performance.now();
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    const step = (now) => {
+      const t = Math.min((now - start) / duration, 1);
+      const e = easeOutCubic(t);
+      map.moveCamera({
+        center: {
+          lat: fromLat + (target.lat - fromLat) * e,
+          lng: fromLng + (target.lng - fromLng) * e,
+        },
+        zoom: fromZoom + (toZoom - fromZoom) * e,
+      });
+      rafRef.current = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    rafRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, [map, target]);
+
   return null;
 }
 
