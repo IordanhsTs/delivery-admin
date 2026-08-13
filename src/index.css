@@ -94,29 +94,28 @@
 }
 
 /* === DARK THEME === */
-/* Παλέτα ίδια με το final-app/store-web-app (client feedback 08/09): βαθύ navy
-   φόντο, ΟΧΙ μαύρο/γκρι — και οι κάρτες (--bg-card) παραμένουν ΑΣΠΡΕΣ όπως εκεί.
-   Το κείμενο μέσα στις κάρτες σκουραίνει μέσω του .card-surface/.card-glass
-   override πιο κάτω, όχι εδώ. Το --bg-sidebar ΔΕΝ ακολουθεί το λευκό των καρτών —
-   το χρησιμοποιεί μόνο το πάνελ φόρτου του LiveMap, που έχει δική του isDark
-   λογική φτιαγμένη για σκούρο φόντο. Ο πλοηγητικός sidebar του App.jsx πέρασε σε
-   var(--bg-card) + class="card-surface" αντί για --bg-sidebar. */
+/* Client feedback 08/13: το dark mode να είναι ΟΛΟ μπλε — βαθύ navy φόντο ΚΑΙ
+   navy κάρτες. Ανατρέπει την 08/09 απόφαση όπου οι κάρτες έμεναν ΑΣΠΡΕΣ πάνω στο
+   navy: ο πελάτης το είδε ως δύο διαφορετικά themes κολλημένα μαζί. Πλέον όλη η
+   κλίμακα είναι ψυχρή (μπλε-γκρι) — τα παλιά ζεστά καφέ/μπεζ tokens
+   (#A89C8E κείμενο, #2A2520 σύνορα) έδιναν σέπια απόχρωση πάνω στο navy.
+   Το χρυσό μένει ΜΟΝΟ ως accent (ενεργό μενού, τιμές), όχι ως επιφάνεια. */
 html.dark {
   color-scheme: dark;
-  /* 60% — Deep base */
-  --bg-primary:    #0B1020;
-  --bg-secondary:  #1B2338;
-  --bg-tertiary:   #222C44;
-  --bg-card:       #FFFFFF;
-  --bg-input:      #1B2338;
-  --bg-sidebar:    #1B2338;
+  /* 60% — Deep base (κάθε επίπεδο ανεβαίνει ελαφρά πάνω από το προηγούμενο) */
+  --bg-primary:    #0A0F1E;
+  --bg-secondary:  #151E33;
+  --bg-tertiary:   #1E2840;
+  --bg-card:       #121A2C;
+  --bg-input:      #161F35;
+  --bg-sidebar:    #0E1524;
 
-  /* 30% — Secondary */
-  --text-primary:   #F0EBE2;
-  --text-secondary: #A89C8E;
-  --text-muted:     #9C8F82;
-  --border-default: #2A2520;
-  --border-subtle:  #221E1A;
+  /* 30% — Secondary (ψυχρό μπλε-γκρι, όχι μπεζ) */
+  --text-primary:   #EAF0FA;
+  --text-secondary: #A3B2CC;
+  --text-muted:     #7E8DA8;
+  --border-default: #26314A;
+  --border-subtle:  #1B2438;
 
   /* 10% — Accent (brighter gold for dark) */
   --accent:         #D4A853;
@@ -149,40 +148,11 @@ html.dark {
   --shadow-xl:  0 16px 48px rgba(0,0,0,0.60), 0 8px 16px rgba(0,0,0,0.40);
 }
 
-/* Οι κάρτες (--bg-card, .card-glass) είναι ΑΣΠΡΕΣ και σε dark mode· ό,τι κείμενο/
-   σύνορο ζει μέσα τους πρέπει να διαβάζεται σε άσπρο φόντο, όχι στο navy. Αντί να
-   αλλάξουμε ΚΑΘΕ var(--text-*) ξεχωριστά σε κάθε component, ξαναορίζουμε τις ίδιες
-   μεταβλητές ΤΟΠΙΚΑ πάνω στη ρίζα κάθε κάρτας (className="card-surface", ή αυτόματα
-   μέσω .card-glass) — τα παιδιά τις κληρονομούν μέσω CSS cascade. Οι τιμές είναι
-   ίδιες με το light theme. Δεν αγγίζουμε το accent (μένει το φωτεινό χρυσό dark mode). */
-html.dark .card-surface,
-html.dark .card-glass {
-  --bg-secondary:   #FFFFFF;
-  --bg-tertiary:    #F1EDE6;
-  --bg-input:       #F4F0EB;
-  --text-primary:   #1E1A14;
-  --text-secondary: #5C5248;
-  --text-muted:     #8A7F74;
-  --border-default: #E5DED4;
-  --border-subtle:  #EDE7DF;
-  --accent-light:   #F5ECD9;
-  --success:        #16A34A;
-  --success-bg:     #F0FDF4;
-  --success-border: #BBF7D0;
-  --danger:         #DC2626;
-  --danger-bg:      #FEF2F2;
-  --danger-border:  #FECACA;
-  --warning:        #D97706;
-  --warning-bg:     #FFFBEB;
-  --warning-border: #FDE68A;
-  --info:           #2563EB;
-  --info-bg:        #EFF6FF;
-  --info-border:    #BFDBFE;
-  --purple:         #7C3AED;
-  --purple-bg:      #F5F3FF;
-  --purple-border:  #DDD6FE;
-  color-scheme: light;
-}
+/* Το .card-surface/.card-glass γύριζε ΟΛΑ τα tokens πίσω στο light theme, επειδή οι
+   κάρτες ήταν άσπρες πάνω στο navy (08/09). Με τις navy κάρτες (08/13) αυτό δεν
+   ισχύει: μέσα στην κάρτα θέλουμε ακριβώς τα ίδια dark tokens με έξω, οπότε το
+   override καταργήθηκε αντί να αντιγράψει τιμές. Οι κλάσεις μένουν στα components —
+   είναι πλέον αδρανείς ως προς τα χρώματα και δίνουν μόνο το φόντο πιο κάτω. */
 
 /* ============================================
    Base Styles
@@ -287,19 +257,19 @@ body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
 }
 html.dark .card-glass {
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+  background-color: #121A2C !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45) !important;
 }
 /* .table-header-glass/.input-glass/.btn-glass/.hover-row-glass ζουν πάντα ΜΕΣΑ σε
-   .card-glass, άρα σε dark mode είναι ήδη πάνω σε άσπρο φόντο — οι τιμές τους
-   αντιγράφουν σκόπιμα το light theme αντί να «σκουρύνουν». */
+   .card-glass. Σε light mode η κάρτα είναι άσπρη, σε dark navy — άρα καθένα
+   χρειάζεται τη δική του τιμή αντί για το καρφωμένο λευκό που είχαν και στα δύο. */
 .table-header-glass {
   background-color: #F8F9FA !important;
   color: #1E1A14 !important;
 }
 html.dark .table-header-glass {
-  background-color: #F8F9FA !important;
-  color: #1E1A14 !important;
+  background-color: #1A2338 !important;
+  color: #EAF0FA !important;
 }
 /* text-adaptive/-light ζουν ΚΑΙ έξω από κάρτες (π.χ. τίτλοι σελίδας πάνω στο navy
    φόντο) — γι' αυτό ακολουθούν το var(--text-*), που ήδη αλλάζει σωστά ανάλογα με
@@ -316,31 +286,30 @@ html.dark .table-header-glass {
   color: #1e293b !important;
 }
 html.dark .input-glass {
-  color-scheme: light !important;
-  background-color: #FFFFFF !important;
-  color: #1e293b !important;
+  color-scheme: dark !important;
+  background-color: #161F35 !important;
+  color: #EAF0FA !important;
 }
 
 .btn-glass {
   background-color: #FFFFFF !important;
 }
 html.dark .btn-glass {
-  color-scheme: light !important;
-  background-color: #FFFFFF !important;
+  color-scheme: dark !important;
+  background-color: #1A2338 !important;
 }
 
 .hover-row-glass:hover {
   background-color: #F1F5F9 !important;
 }
 html.dark .hover-row-glass:hover {
-  background-color: #F1F5F9 !important;
+  background-color: #1E2840 !important;
 }
 
 /* Sidebar πλοήγησης (App.jsx) — χρυσό φόντο με μαύρα γράμματα σε desktop, ώστε να
    ξεχωρίζει καθαρά από τον χάρτη/περιεχόμενο δίπλα του αντί να «ενώνεται» μαζί του
-   (client feedback 08-09). Ίδιο fixed look σε light ΚΑΙ dark mode (δεν αλλάζει με
-   το θέμα), ακριβώς όπως το --bg-card παρέμενε πάντα άσπρο πριν. Μόνο md+ (desktop) —
-   στο mobile η πάνω μπάρα μένει όπως ήταν. */
+   (client feedback 08-09). Μόνο md+ (desktop) — στο mobile η πάνω μπάρα μένει
+   όπως ήταν. */
 @media (min-width: 768px) {
   .sidebar-gold {
     background: #C5A066 !important;
@@ -351,6 +320,19 @@ html.dark .hover-row-glass:hover {
     --accent:         #1E1A14 !important;
     --accent-hover:   #2A2520 !important;
     --accent-muted:   rgba(30,26,20,0.14) !important;
+  }
+  /* Σε dark mode ΟΧΙ χρυσή πλάκα (client feedback 08/13): το μενού είναι navy σαν
+     τα υπόλοιπα πάνελ και το χρυσό μένει μόνο στο ενεργό στοιχείο. Ο διαχωρισμός
+     από τον χάρτη γίνεται πλέον με σύνορο αντί για μπλοκ χρώματος. */
+  html.dark .sidebar-gold {
+    background: #0E1524 !important;
+    --text-primary:   #EAF0FA !important;
+    --text-secondary: #A3B2CC !important;
+    --text-muted:     #7E8DA8 !important;
+    --border-default: #26314A !important;
+    --accent:         #D4A853 !important;
+    --accent-hover:   #E2BA66 !important;
+    --accent-muted:   rgba(212,168,83,0.14) !important;
   }
 }
 
