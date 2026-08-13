@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { renderToString } from 'react-dom/server';
-import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { createPortal } from 'react-dom';
+import { APIProvider, Map, useMap, ControlPosition } from '@vis.gl/react-google-maps';
 import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
 import { pushFailureReason } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
@@ -14,22 +9,14 @@ import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatKm, formatEuro, formatCountdown, orderDurations } from './distance';
+import { DARK_MAP_STYLE } from './mapDarkStyle';
 
-// Tile layer URL — client feedback 08/09: ίδιος χάρτης (Voyager) και στα δύο theme,
-// αντί για ξεχωριστό σκούρο layer στο dark mode. Επαναφορά στους Carto μέχρι να
-// βάλουμε το επίσημο Google Maps API.
-const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-
-// Τα εικονίδια έρχονται από το ΙΔΙΟ το πακέτο leaflet (node_modules) και μπαίνουν
-// στο bundle από το Vite — όχι από CDN. Έτσι ο χάρτης δείχνει σωστούς δείκτες
-// ακόμα κι όταν δεν υπάρχει πρόσβαση στο cdnjs (offline/κλειστό δίκτυο πελάτη).
-// Bonus: πριν τραβούσαμε icons v1.7.1 ενώ το εγκατεστημένο leaflet είναι 1.9.4.
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-});
+// Client feedback 08/13: μετάβαση από Carto/Leaflet σε Google Maps — το native
+// JSON styling επιτρέπει πραγματικά σκούρο χάρτη (dark_all σκότωνε ελληνικά
+// ονόματα δρόμων), κάτι που ο δωρεάν Voyager raster δεν πρόσφερε. Το key ζει
+// στο VITE_GOOGLE_MAPS_KEY (.env.local τοπικά, Vercel Production env var εκεί).
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
+const FLORINA_DEFAULT = { lat: 40.7819, lng: 21.4098 };
 
 // ── Ήχος ειδοποίησης νέας παραγγελίας ───────────────────────────────────────
 // Παράγεται τοπικά με Web Audio αντί να κατεβαίνει .ogg από το actions.google.com:
@@ -84,13 +71,16 @@ const batteryVisual = (level) => {
   return { Icon: BatteryFull, color: 'var(--map-green)' };
 };
 
-// Το Leaflet δεν αντιλαμβάνεται μόνο του αλλαγές μεγέθους του container
-// (π.χ. άνοιγμα του πάνελ φόρτου) — κάνουμε invalidateSize σε κάθε resize.
+// Η Google δεν ξαναδιατάσσει μόνη της όταν αλλάζει το μέγεθος του container
+// (π.χ. άνοιγμα του πάνελ φόρτου) — στέλνουμε το 'resize' event εμείς.
 function MapResizeHandler() {
   const map = useMap();
   useEffect(() => {
-    const ro = new ResizeObserver(() => map.invalidateSize());
-    ro.observe(map.getContainer());
+    if (!map) return;
+    const ro = new ResizeObserver(() => {
+      window.google.maps.event.trigger(map, 'resize');
+    });
+    ro.observe(map.getDiv());
     return () => ro.disconnect();
   }, [map]);
   return null;
@@ -100,9 +90,9 @@ function MapResizeHandler() {
 // μόνο μία φορά (default → fetched) κατά τη φόρτωση, οπότε δεν παλεύει με τον χρήστη.
 function MapCenterHandler({ center }) {
   const map = useMap();
-  const key = center ? `${center[0]},${center[1]}` : '';
+  const key = center ? `${center.lat},${center.lng}` : '';
   useEffect(() => {
-    if (center) map.setView(center);
+    if (map && center) map.setCenter(center);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key]);
   return null;
@@ -110,14 +100,200 @@ function MapCenterHandler({ center }) {
 
 // «Προβολή στο χάρτη»: κεντράρει τον χάρτη στον διανομέα που διάλεξε ο χρήστης.
 // Το `target` αλλάζει ταυτότητα σε κάθε κλικ (κρατά timestamp), ώστε να δουλεύει
-// και δεύτερο κλικ στον ίδιο διανομέα αφού ο χρήστης μετακινήσει τον χάρτη.
+// και δεύτερο κλικ στον ίδιο διανομέα αφού ο χρήστης μετακινήσει τον χάρτη. Η
+// Google δεν έχει animated flyTo με ρυθμιζόμενη διάρκεια σαν το Leaflet — το
+// panTo κάνει ήδη ομαλό pan από μόνο του σε κοντινές αποστάσεις.
 function MapFocusHandler({ target }) {
   const map = useMap();
   useEffect(() => {
-    if (!target) return;
-    map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 16), { duration: 0.8 });
+    if (!map || !target) return;
+    map.panTo({ lat: target.lat, lng: target.lng });
+    map.setZoom(Math.max(map.getZoom(), 16));
   }, [map, target]);
   return null;
+}
+
+// ── Δείκτης διανομέα ως πραγματικό DOM/React μέσω custom OverlayView ────────
+// Αντικαθιστά το παλιό L.divIcon (στατικό HTML string μέσω renderToString): εδώ
+// το περιεχόμενο είναι ζωντανό React, τοποθετημένο στις σωστές συντεταγμένες με
+// OverlayView.draw() + createPortal. Σκόπιμα ΟΧΙ AdvancedMarker — απαιτεί
+// cloud-configured Map ID, οπότε το δικό μας inline DARK_MAP_STYLE θα αγνοούνταν.
+function DriverMarkerOverlay({ map, position, children }) {
+  const [container] = useState(() => {
+    const div = document.createElement('div');
+    div.style.position = 'absolute';
+    return div;
+  });
+  const overlayRef = useRef(null);
+
+  useEffect(() => {
+    if (!map || !window.google?.maps) return undefined;
+    class Overlay extends window.google.maps.OverlayView {
+      onAdd() {
+        this.getPanes().overlayMouseTarget.appendChild(container);
+      }
+      draw() {
+        const proj = this.getProjection();
+        const point = proj && proj.fromLatLngToDivPixel(
+          new window.google.maps.LatLng(position.lat, position.lng)
+        );
+        if (point) {
+          container.style.left = `${point.x}px`;
+          container.style.top = `${point.y}px`;
+        }
+      }
+      onRemove() {
+        container.parentNode?.removeChild(container);
+      }
+    }
+    const overlay = new Overlay();
+    overlay.setMap(map);
+    overlayRef.current = overlay;
+    return () => overlay.setMap(null);
+  }, [map, container]);
+
+  // Το draw() του OverlayView τρέχει μόνο σε pan/zoom/resize του χάρτη — αν
+  // αλλάξουν οι συντεταγμένες του διανομέα (νέο GPS σήμα) χωρίς να κινηθεί ο
+  // χάρτης, πρέπει να ζητήσουμε ρητά επανασχεδίαση.
+  useEffect(() => {
+    overlayRef.current?.draw();
+  }, [position.lat, position.lng]);
+
+  return createPortal(children, container);
+}
+
+// ── Στρώση δεικτών διανομέα πάνω στον χάρτη ─────────────────────────────────
+// Χρειάζεται useMap() για το πραγματικό google.maps.Map instance, άρα ζει ως
+// child του <Map> (ίδιο pattern με MapResizeHandler/MapCenterHandler). Ίδια
+// λογική χρωμάτων/tooltip με πριν (busy/idle/no-signal/battery) — άλλαξε μόνο
+// ο μηχανισμός τοποθέτησης (OverlayView αντί για L.divIcon).
+function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }) {
+  const map = useMap();
+  if (!map) return null;
+
+  return drivers.map(driver => {
+    if (!driver.latitude || !driver.longitude) return null;
+
+    const driverActiveOrders = orders.filter(o => o.status === 'accepted' && o.driver_id === driver.id);
+    const isBusy = driverActiveOrders.length > 0;
+
+    const ageMin = driver.last_seen
+      ? (currentTime.getTime() - new Date(driver.last_seen).getTime()) / 60000
+      : Infinity;
+    if (ageMin > SIGNAL_OFFLINE_MIN) return null; // πραγματικά εκτός → φεύγει από τον χάρτη
+    const noSignal = ageMin > SIGNAL_FRESH_MIN;    // χαμένο σήμα (ασανσέρ κ.λπ.) → μένει, γκρι
+    const markerColor = noSignal ? 'var(--map-offline)' : (isBusy ? 'var(--map-green)' : 'var(--map-gold)');
+    const markerGlow = noSignal ? 'var(--map-glow-offline)' : (isBusy ? 'var(--map-glow-green)' : 'var(--map-glow-gold)');
+    const battery = batteryVisual(driver.battery_level);
+    const tooltipAccent = isBusy ? 'var(--map-green)' : 'var(--map-gold)';
+
+    let idleStatusHtml;
+    if (isBusy) {
+      idleStatusHtml = (
+        <div className="mt-1">
+          <span className="font-bold text-[var(--map-green)] block text-[10px] uppercase tracking-wider mb-1">
+            Σε διανομή ({driverActiveOrders.length}):
+          </span>
+          {driverActiveOrders.map(order => {
+            const { acceptedMins } = orderDurations(order, currentTime);
+            return (
+              <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
+                <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
+                <span className="text-slate-400 mx-0.5">➔</span>
+                <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
+                <span
+                  className="flex items-center gap-0.5 shrink-0 font-bold ml-0.5"
+                  style={{ color: 'var(--map-green)' }}
+                  title="Χρόνος από την αποδοχή της παραγγελίας"
+                >
+                  <Clock size={10} /> {acceptedMins}′
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    } else {
+      const lastTime = lastCompletedTimes[driver.id];
+      if (lastTime) {
+        const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
+        idleStatusHtml = (
+          <div className={`font-bold text-[11px] mt-1.5 flex items-center gap-1 ${diffMins > 10 ? 'text-[var(--map-critical)]' : 'text-[var(--map-gold)]'}`}>
+            <AlertTriangle size={11} /> Ανενεργός: {diffMins} λ.
+          </div>
+        );
+      } else {
+        idleStatusHtml = <div className="text-slate-400 italic text-[11px] mt-1.5 flex items-center gap-1"><Check size={11} /> Διαθέσιμος</div>;
+      }
+    }
+
+    return (
+      <DriverMarkerOverlay key={driver.id} map={map} position={{ lat: driver.latitude, lng: driver.longitude }}>
+        {/* Ίδιο anchor math με το παλιό iconAnchor [45,19] σε κουτί [90,58]:
+            η μεταφορά -45px/-19px φέρνει το ΚΕΝΤΡΟ ΤΟΥ ΚΥΚΛΟΥ (όχι το pill
+            από κάτω) πάνω στις πραγματικές συντεταγμένες. */}
+        <div className="group relative" style={{ width: '90px', transform: 'translate(-45px, -19px)' }}>
+          <div className="flex flex-col items-center">
+            <div style={{
+              width: '38px', height: '38px', borderRadius: '50%', background: '#111',
+              border: `2px solid ${markerColor}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 0 15px ${markerGlow}`,
+              opacity: noSignal ? 0.75 : 1,
+              transition: 'all 0.3s ease',
+            }}>
+              <Bike size={18} color={markerColor} />
+            </div>
+            <div style={{
+              marginTop: '2px', padding: '1px 6px', borderRadius: '999px',
+              background: 'rgba(17,17,17,0.85)', color: markerColor,
+              fontSize: '10px', fontWeight: 700, lineHeight: '14px', whiteSpace: 'nowrap',
+              maxWidth: '86px', overflow: 'hidden', textOverflow: 'ellipsis',
+              border: `1px solid ${markerColor}55`,
+            }}>
+              {driver.full_name}
+            </div>
+          </div>
+
+          {/* Πλούσιο tooltip — hover only (σκέτο CSS, αντί για δεύτερο επίπεδο
+              InfoWindow/OverlayView), ίδιο περιεχόμενο με πριν. */}
+          <div
+            className="opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150"
+            style={{
+              position: 'absolute', bottom: '100%', left: '50%', transform: 'translate(-50%, -8px)',
+              background: '#111111', border: `1px solid ${tooltipAccent}`, borderRadius: '8px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.8)', padding: '8px 12px', backdropFilter: 'blur(10px)',
+              zIndex: 20,
+            }}
+          >
+            <div className="leading-relaxed min-w-[120px]">
+              <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-gray-700/50">
+                <div className={`w-2 h-2 rounded-full ${!noSignal && isBusy ? 'animate-pulse' : ''}`} style={{ background: markerColor }}></div>
+                <b className="text-[13px] text-white tracking-wide">{driver.full_name}</b>
+              </div>
+              {battery && (
+                <div className="flex items-center gap-1 text-[11px] font-bold mb-0.5" style={{ color: battery.color }}>
+                  <battery.Icon size={12} /> Μπαταρία: {driver.battery_level}%
+                </div>
+              )}
+              {noSignal && (
+                <div className="font-bold text-[11px] mb-0.5 flex items-center gap-1" style={{ color: 'var(--map-offline-text)' }}>
+                  <AlertTriangle size={11} /> Χωρίς σήμα: {Math.floor(ageMin)} λ.
+                </div>
+              )}
+              {idleStatusHtml}
+            </div>
+            {/* Βελάκι tooltip προς τα κάτω, χρώμα ανά κατάσταση */}
+            <div style={{
+              position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+              width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+              borderTop: `6px solid ${tooltipAccent}`,
+            }} />
+          </div>
+        </div>
+      </DriverMarkerOverlay>
+    );
+  });
 }
 
 // ── Chip απόστασης (+ επιπλέον χρέωση καταστήματος όταν υπάρχει) ────────────
@@ -311,7 +487,6 @@ export default function LiveMap({ navHidden = false }) {
   // Γραμμένα ολόκληρα (όχι με template) γιατί ο JIT του Tailwind ψάχνει τη συμβολοσειρά αυτούσια.
   const railWidthClass = navHidden ? 'md:w-[340px] xl:w-[640px]' : 'md:w-[340px]';
 
-  const mapFilter = 'none';
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [assigningOrderId, setAssigningOrderId] = useState(null);
@@ -338,7 +513,7 @@ export default function LiveMap({ navHidden = false }) {
   const [loadingWorkload, setLoadingWorkload] = useState(false);
   // MULTI-TENANT: κέντρο χάρτη ανά εταιρία από τον companies (fallback Φλώρινα· σε
   // production χωρίς companies/hook το query αποτυγχάνει σιωπηλά → μένει το default).
-  const [centerPosition, setCenterPosition] = useState([40.7819, 21.4098]);
+  const [centerPosition, setCenterPosition] = useState(FLORINA_DEFAULT);
   useEffect(() => {
     (async () => {
       try {
@@ -346,7 +521,7 @@ export default function LiveMap({ navHidden = false }) {
           .select('map_center').eq('schema_name', getTenantSchema()).maybeSingle();
         if (data?.map_center) {
           const [lat, lng] = data.map_center.split(',').map(Number);
-          if (Number.isFinite(lat) && Number.isFinite(lng)) setCenterPosition([lat, lng]);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) setCenterPosition({ lat, lng });
         }
       } catch (_) {}
     })();
@@ -825,32 +1000,6 @@ export default function LiveMap({ navHidden = false }) {
   return (
     <div className="flex flex-col md:h-full font-sans" style={{ color: 'var(--text-primary)' }}>
 
-      {/* Δυναμικό CSS για τα Map Tiles & tooltips */}
-      <style>
-        {`
-          .custom-filtered-map .leaflet-tile-pane {
-            filter: ${mapFilter};
-            transition: filter 0.5s ease;
-          }
-          .leaflet-control-attribution {
-            opacity: 0.5;
-            font-size: 10px !important;
-          }
-          .premium-tooltip {
-            background: #111111 !important;
-            border: 1px solid var(--map-gold) !important;
-            border-radius: 8px !important;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.8) !important;
-            padding: 8px 12px !important;
-            backdrop-filter: blur(10px) !important;
-          }
-          .premium-tooltip::before { border-top-color: var(--map-gold) !important; }
-          .premium-tooltip-busy { border-color: var(--map-green) !important; }
-          .premium-tooltip-busy::before { border-top-color: var(--map-green) !important; }
-          .custom-div-icon { background: transparent; border: none; }
-        `}
-      </style>
-
       {/* ΓΡΑΜΜΗ KPI ΠΑΝΩ ΑΠΟ ΤΟΝ ΧΑΡΤΗ: καταργήθηκε (απόφαση πελάτη). Οι ίδιοι
           αριθμοί ζουν πλέον στη «Σήμερα με μια ματιά» κάτω από τον χάρτη, ο
           φόρτος στην κάτω δεξιά κάρτα, και η κατάσταση συστήματος φαίνεται
@@ -861,130 +1010,40 @@ export default function LiveMap({ navHidden = false }) {
 
         {/* ── Χάρτης (full-bleed) ── */}
         <div ref={mapWrapRef} className="relative h-[48vh] md:h-auto md:flex-1 min-w-0 z-0">
-          <MapContainer center={centerPosition} zoom={14} zoomControl={false} className="h-full w-full custom-filtered-map" style={{ background: 'var(--bg-primary)' }}>
-            <MapResizeHandler />
-            <MapCenterHandler center={centerPosition} />
-            <MapFocusHandler target={focusTarget} />
-            <TileLayer
-              attribution='&copy; <a href="https://carto.com/">Carto</a>'
-              url={MAP_TILE_URL}
-            />
-            <ZoomControl position="bottomleft" />
-
-            {drivers.map(driver => {
-              const driverActiveOrders = orders.filter(o => o.status === 'accepted' && o.driver_id === driver.id);
-              const isBusy = driverActiveOrders.length > 0;
-
-              // ── Φρεσκάδα σήματος: κρύβουμε μόνο όσους λείπουν πάνω από SIGNAL_OFFLINE_MIN ──
-              const ageMin = signalAgeMin(driver);
-              if (ageMin > SIGNAL_OFFLINE_MIN) return null; // πραγματικά εκτός → φεύγει από τον χάρτη
-              const noSignal = ageMin > SIGNAL_FRESH_MIN;   // χαμένο σήμα (ασανσέρ κ.λπ.) → μένει, γκρι
-              const markerColor = noSignal ? 'var(--map-offline)' : (isBusy ? 'var(--map-green)' : 'var(--map-gold)');
-              const markerGlow = noSignal ? 'var(--map-glow-offline)' : (isBusy ? 'var(--map-glow-green)' : 'var(--map-glow-gold)');
-              const battery = batteryVisual(driver.battery_level);
-
-              let idleStatusHtml;
-
-              if (isBusy) {
-                idleStatusHtml = (
-                  <div className="mt-1">
-                    <span className="font-bold text-[var(--map-green)] block text-[10px] uppercase tracking-wider mb-1">
-                      Σε διανομή ({driverActiveOrders.length}):
-                    </span>
-                    {driverActiveOrders.map(order => {
-                      // Πόσα λεπτά πριν αποδέχτηκε ΑΥΤΗΝ την παραγγελία ο διανομέας —
-                      // ίδιος υπολογισμός με το «αποδεκτή» χρόνο της δεξιάς στήλης.
-                      const { acceptedMins } = orderDurations(order, currentTime);
-                      return (
-                        // Σταθερά ανοιχτόχρωμα (όχι text-adaptive/-light): το premium-tooltip
-                        // έχει πάντα μαύρο φόντο, ανεξαρτήτως theme — σε light mode το
-                        // "έξυπνο" σκούρο κείμενο του text-adaptive γινόταν σχεδόν αόρατο.
-                        <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
-                          <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
-                          <span className="text-slate-400 mx-0.5">➔</span>
-                          <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
-                          <span
-                            className="flex items-center gap-0.5 shrink-0 font-bold ml-0.5"
-                            style={{ color: 'var(--map-green)' }}
-                            title="Χρόνος από την αποδοχή της παραγγελίας"
-                          >
-                            <Clock size={10} /> {acceptedMins}′
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              } else {
-                const lastTime = lastCompletedTimes[driver.id];
-                if (lastTime) {
-                  const diffMins = Math.floor((currentTime.getTime() - lastTime) / 60000);
-                  idleStatusHtml = (
-                    <div className={`font-bold text-[11px] mt-1.5 flex items-center gap-1 ${diffMins > 10 ? 'text-[var(--map-critical)]' : 'text-[var(--map-gold)]'}`}>
-                      <AlertTriangle size={11} /> Ανενεργός: {diffMins} λ.
-                    </div>
-                  );
-                } else {
-                  idleStatusHtml = <div className="text-slate-400 italic text-[11px] mt-1.5 flex items-center gap-1"><Check size={11} /> Διαθέσιμος</div>;
-                }
-              }
-
-              const markerIcon = L.divIcon({
-                className: 'custom-div-icon',
-                html: renderToString(
-                  <div className="flex flex-col items-center" style={{ width: '90px' }}>
-                    <div style={{
-                      width: '38px', height: '38px', borderRadius: '50%', background: '#111',
-                      border: `2px solid ${markerColor}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: `0 0 15px ${markerGlow}`,
-                      opacity: noSignal ? 0.75 : 1,
-                      transition: 'all 0.3s ease'
-                    }}>
-                      <Bike size={18} color={markerColor} />
-                    </div>
-                    {/* Μόνιμη ετικέτα: μόνο όνομα, ώστε να μην αλληλοκαλύπτονται με 8+ διανομείς —
-                        οι λεπτομέρειες (μπαταρία/σήμα/κατάσταση) μετακόμισαν στο hover Tooltip. */}
-                    <div style={{
-                      marginTop: '2px', padding: '1px 6px', borderRadius: '999px',
-                      background: 'rgba(17,17,17,0.85)', color: markerColor,
-                      fontSize: '10px', fontWeight: 700, lineHeight: '14px', whiteSpace: 'nowrap',
-                      maxWidth: '86px', overflow: 'hidden', textOverflow: 'ellipsis',
-                      border: `1px solid ${markerColor}55`,
-                    }}>
-                      {driver.full_name}
-                    </div>
-                  </div>
-                ),
-                iconSize: [90, 58],
-                iconAnchor: [45, 19],
-              });
-
-              return driver.latitude && driver.longitude ? (
-                <Marker key={driver.id} position={[driver.latitude, driver.longitude]} icon={markerIcon}>
-                  <Tooltip direction="top" offset={[0, -22]} opacity={1} className={`premium-tooltip ${isBusy ? 'premium-tooltip-busy' : ''}`}>
-                    <div className="leading-relaxed min-w-[120px]">
-                      <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-gray-700/50">
-                        <div className={`w-2 h-2 rounded-full ${!noSignal && isBusy ? 'animate-pulse' : ''}`} style={{ background: markerColor }}></div>
-                        <b className="text-[13px] text-white tracking-wide">{driver.full_name}</b>
-                      </div>
-                      {battery && (
-                        <div className="flex items-center gap-1 text-[11px] font-bold mb-0.5" style={{ color: battery.color }}>
-                          <battery.Icon size={12} /> Μπαταρία: {driver.battery_level}%
-                        </div>
-                      )}
-                      {noSignal && (
-                        <div className="font-bold text-[11px] mb-0.5 flex items-center gap-1" style={{ color: 'var(--map-offline-text)' }}>
-                          <AlertTriangle size={11} /> Χωρίς σήμα: {Math.floor(ageMin)} λ.
-                        </div>
-                      )}
-                      {idleStatusHtml}
-                    </div>
-                  </Tooltip>
-                </Marker>
-              ) : null;
-            })}
-          </MapContainer>
+          {!GOOGLE_MAPS_KEY ? (
+            <div
+              className="h-full w-full flex items-center justify-center text-center text-[13px] px-6"
+              style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}
+            >
+              Λείπει το <code className="mx-1">VITE_GOOGLE_MAPS_KEY</code> — βάλε το στο
+              περιβάλλον αυτού του deployment για να φορτώσει ο χάρτης.
+            </div>
+          ) : (
+            <APIProvider apiKey={GOOGLE_MAPS_KEY}>
+              <Map
+                defaultCenter={centerPosition}
+                defaultZoom={14}
+                gestureHandling="greedy"
+                disableDefaultUI
+                zoomControl
+                zoomControlOptions={{ position: ControlPosition.LEFT_BOTTOM }}
+                styles={isDark ? DARK_MAP_STYLE : undefined}
+                reuseMaps
+                className="h-full w-full"
+                style={{ background: 'var(--bg-primary)' }}
+              >
+                <MapResizeHandler />
+                <MapCenterHandler center={centerPosition} />
+                <MapFocusHandler target={focusTarget} />
+                <DriverMarkersLayer
+                  drivers={drivers}
+                  orders={orders}
+                  currentTime={currentTime}
+                  lastCompletedTimes={lastCompletedTimes}
+                />
+              </Map>
+            </APIProvider>
+          )}
 
           {/* Empty state πάνω στον χάρτη */}
           {visibleDrivers.length === 0 && (
