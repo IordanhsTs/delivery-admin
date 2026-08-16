@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { STORE_CATEGORIES } from './storeCategories';
+import { invokeWithAuthRetry } from './pushErrors';
 
 // ── Καταστήματα & διανομείς σε καρτέλες (αίτημα πελάτη 08/08/2026) ───────────
 // Ίδια γλώσσα με τον «Στόλο μηχανών»: πλέγμα από τετράγωνες κάρτες, ένα κουμπί
@@ -115,7 +116,7 @@ function eur(v) {
  * non-2xx status code» — το πραγματικό μήνυμα κρύβεται στο `error.context`.
  */
 async function invokeAdminFn(name, body) {
-  const { data, error } = await supabase.functions.invoke(name, { body });
+  const { data, error } = await invokeWithAuthRetry(name, { body });
   if (error) {
     let message = error.message;
     try {

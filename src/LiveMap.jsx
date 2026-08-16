@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { APIProvider, Map, useMap, ControlPosition } from '@vis.gl/react-google-maps';
 import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
-import { pushFailureReason } from './pushErrors';
+import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -878,7 +878,7 @@ export default function LiveMap({ navHidden = false }) {
   // Αστοχία εδώ ΔΕΝ ακυρώνει την ανάθεση: η ίδια η μετακίνηση έχει ήδη γίνει.
   const notifyDriverOfAssignment = async (orderId, driverId, kind) => {
     try {
-      const { data, error } = await supabase.functions.invoke('send-assignment-notification', {
+      const { data, error } = await invokeWithAuthRetry('send-assignment-notification', {
         body: { orderId, driverId, kind },
       });
       if (error) {

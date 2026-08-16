@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { pushFailureReason } from './pushErrors';
+import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { Megaphone, Send, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -101,7 +101,7 @@ export default function Messages() {
         // σε συσκευή στο μαγαζί.
         if (targetType === 'driver') {
           try {
-            const { data, error: pushError } = await supabase.functions.invoke('send-message-notification', {
+            const { data, error: pushError } = await invokeWithAuthRetry('send-message-notification', {
               body: { targetIds: selectedTargets, message: payload.message },
             });
             // Η αποτυχία εδώ ήταν ΕΝΤΕΛΩΣ σιωπηλή (μόνο console.error): το πράσινο

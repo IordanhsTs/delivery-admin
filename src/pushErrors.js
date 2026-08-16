@@ -7,6 +7,26 @@
 // Χωρίς αυτό, κάθε αποτυχία ειδοποίησης έβγαζε το ίδιο αόριστο μήνυμα και ήταν
 // αδύνατο να διαγνωστεί από τον διαχειριστή — ή από εμάς όταν το ανέφερε.
 
+import { supabase } from './supabaseClient';
+
+// ─── 401 auto-retry ──────────────────────────────────────────────────────────
+// Το LiveMap μένει ανοιχτό ΩΡΕΣ σε ένα PC μιας βάρδιας. Το supabase-js ανανεώνει
+// μόνο του το access token, αλλά αν η καρτέλα μείνει αδρανής/σε background πολύ
+// (π.χ. sleep του laptop) η ανανέωση μπορεί να μην προλάβει πριν λήξει — και τότε
+// ΚΑΘΕ κλήση functions.invoke() πέφτει σε 401 μέχρι να κάνει χειροκίνητα F5 +
+// ξανασύνδεση ο χρήστης. Ένα ρητό refreshSession() + ένα retry εδώ γλιτώνει αυτό
+// το χειροκίνητο βήμα στις περισσότερες περιπτώσεις.
+export async function invokeWithAuthRetry(name, options) {
+  let result = await supabase.functions.invoke(name, options);
+  if (result.error?.context?.status === 401) {
+    const { error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError) {
+      result = await supabase.functions.invoke(name, options);
+    }
+  }
+  return result;
+}
+
 /**
  * Επιστρέφει ελληνικό, εκτελέσιμο λόγο αποτυχίας για ένα σφάλμα functions.invoke.
  * Δεν πετάει ποτέ: αν δεν μπορεί να διαβάσει το σώμα, γυρνά ό,τι ξέρει.
