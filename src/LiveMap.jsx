@@ -158,6 +158,14 @@ function DriverMarkerOverlay({ map, position, children }) {
     return div;
   });
   const overlayRef = useRef(null);
+  // Το draw() ζει μέσα στην κλάση Overlay, φτιαγμένη μία φορά στο mount (βλ. deps
+  // [map, container] παρακάτω) — αν διάβαζε το `position` απευθείας θα έμενε
+  // παγωμένο στην τιμή εκείνης της στιγμής (stale closure) και το σημαδάκι δεν θα
+  // ακολουθούσε ποτέ νέα GPS σήματα, ενόσω η εστίαση χάρτη (που διαβάζει state)
+  // θα πήγαινε σωστά. Το ref ενημερώνεται σε κάθε render, οπότε το draw() πάντα
+  // βλέπει την τρέχουσα θέση.
+  const positionRef = useRef(position);
+  positionRef.current = position;
 
   useEffect(() => {
     if (!map || !window.google?.maps) return undefined;
@@ -167,8 +175,9 @@ function DriverMarkerOverlay({ map, position, children }) {
       }
       draw() {
         const proj = this.getProjection();
+        const { lat, lng } = positionRef.current;
         const point = proj && proj.fromLatLngToDivPixel(
-          new window.google.maps.LatLng(position.lat, position.lng)
+          new window.google.maps.LatLng(lat, lng)
         );
         if (point) {
           container.style.left = `${point.x}px`;
