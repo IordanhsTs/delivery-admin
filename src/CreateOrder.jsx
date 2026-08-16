@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isReadOnly } from './supabaseClient';
+import { invokeWithAuthRetry, pushFailureReason } from './pushErrors';
 import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send, Bike, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -61,8 +62,12 @@ export default function CreateOrder() {
       newOrder.accepted_at = new Date().toISOString();
     }
 
-    // Εισαγωγή της νέας παραγγελίας
-    const { error } = await supabase.from('orders').insert([newOrder]);
+    // Εισαγωγή της νέας παραγγελίας. Στην απευθείας ανάθεση η παραγγελία μπαίνει
+    // κατευθείαν με status 'accepted', οπότε το webhook του send-order-notification
+    // (που πυροδοτεί μόνο σε INSERT με status 'pending') ΔΕΝ θα στείλει τίποτα —
+    // ο ήχος ανάθεσης πρέπει να έρθει ρητά από το send-assignment-notification,
+    // ακριβώς όπως κάνει το LiveMap όταν αναθέτεις υπάρχουσα παραγγελία.
+    const { data: inserted, error } = await supabase.from('orders').insert([newOrder]).select('id').single();
 
     setLoading(false);
 
@@ -72,6 +77,7 @@ export default function CreateOrder() {
     } else {
       if (isDirectAssignment) {
         toast.success("Η παραγγελία ανατέθηκε απευθείας στον διανομέα!", { icon: <Rocket size={18} /> });
+        notifyDriverOfAssignment(inserted.id, selectedDriverId, 'assign');
       } else {
         toast.success("Η παραγγελία δημιουργήθηκε και προωθήθηκε σε όλους!", { icon: <Rocket size={18} /> });
       }
@@ -79,6 +85,29 @@ export default function CreateOrder() {
       setSelectedStoreId('');
       setSelectedDriverId('');
       setComments('');
+    }
+  };
+
+  // Push στον διανομέα τη ΣΤΙΓΜΗ της απευθείας ανάθεσης — ίδιο pattern με το
+  // LiveMap.jsx (notifyDriverOfAssignment). Αστοχία εδώ ΔΕΝ ακυρώνει τη
+  // δημιουργία: η παραγγελία έχει ήδη καταχωρηθεί.
+  const notifyDriverOfAssignment = async (orderId, driverId, kind) => {
+    try {
+      const { data, error } = await invokeWithAuthRetry('send-assignment-notification', {
+        body: { orderId, driverId, kind },
+      });
+      if (error) {
+        const reason = await pushFailureReason(error);
+        console.error('[assignment push]', error, reason);
+        toast.error(`Η ειδοποίηση στον διανομέα απέτυχε. ${reason}`);
+        return;
+      }
+      if (data?.skipped) {
+        toast.warning('Ο διανομέας δεν έχει ενεργές ειδοποιήσεις στο κινητό του — δεν θα χτυπήσει. Πρέπει να μπει στην εφαρμογή και να δώσει άδεια ειδοποιήσεων.');
+      }
+    } catch (e) {
+      console.error('[assignment push]', e);
+      toast.error('Η ειδοποίηση στον διανομέα απέτυχε — δεν υπήρξε απάντηση από τον διακομιστή.');
     }
   };
 
