@@ -4,7 +4,7 @@ import { APIProvider, Map, useMap, ControlPosition } from '@vis.gl/react-google-
 import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
 import { pushFailureReason } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -202,6 +202,18 @@ function DriverMarkerOverlay({ map, position, children }) {
 // ο μηχανισμός τοποθέτησης (OverlayView αντί για L.divIcon).
 function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }) {
   const map = useMap();
+  // Στο κινητό δεν υπάρχει CSS :hover, οπότε το tooltip έμενε κλειστό σε tap.
+  // Tap πάνω στον δείκτη ανοιγοκλείνει το tooltip χειροκίνητα· στον υπολογιστή
+  // εξακολουθεί να δουλεύει και το hover (group-hover), δεν πειράχτηκε.
+  const [openDriverId, setOpenDriverId] = useState(null);
+
+  // Tap στον χάρτη (εκτός δείκτη) κλείνει το tooltip που άνοιξε με tap.
+  useEffect(() => {
+    if (!map) return undefined;
+    const listener = map.addListener('click', () => setOpenDriverId(null));
+    return () => listener.remove();
+  }, [map]);
+
   if (!map) return null;
 
   return drivers.map(driver => {
@@ -265,7 +277,11 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
         {/* Ίδιο anchor math με το παλιό iconAnchor [45,19] σε κουτί [90,58]:
             η μεταφορά -45px/-19px φέρνει το ΚΕΝΤΡΟ ΤΟΥ ΚΥΚΛΟΥ (όχι το pill
             από κάτω) πάνω στις πραγματικές συντεταγμένες. */}
-        <div className="group relative" style={{ width: '90px', transform: 'translate(-45px, -19px)' }}>
+        <div
+          className="group relative"
+          style={{ width: '90px', transform: 'translate(-45px, -19px)', cursor: 'pointer' }}
+          onClick={() => setOpenDriverId(prev => (prev === driver.id ? null : driver.id))}
+        >
           <div className="flex flex-col items-center">
             <div style={{
               width: '38px', height: '38px', borderRadius: '50%', background: '#111',
@@ -288,8 +304,8 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
             </div>
           </div>
 
-          {/* Πλούσιο tooltip — hover only (σκέτο CSS, αντί για δεύτερο επίπεδο
-              InfoWindow/OverlayView), ίδιο περιεχόμενο με πριν. */}
+          {/* Πλούσιο tooltip — hover στον υπολογιστή (CSS group-hover) ή tap στο
+              κινητό (openDriverId state, βλ. onClick στο marker παραπάνω). */}
           <div
             className="opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150"
             style={{
@@ -297,6 +313,7 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
               background: '#111111', border: `1px solid ${tooltipAccent}`, borderRadius: '8px',
               boxShadow: '0 4px 20px rgba(0,0,0,0.8)', padding: '8px 12px', backdropFilter: 'blur(10px)',
               zIndex: 20,
+              opacity: openDriverId === driver.id ? 1 : undefined,
             }}
           >
             <div className="leading-relaxed min-w-[120px]">
@@ -537,6 +554,8 @@ export default function LiveMap({ navHidden = false }) {
   // Πότε μπήκαν τελευταία φορά ΔΕΔΟΜΕΝΑ (όχι απλώς τικ ρολογιού) — το δείχνει η
   // ένδειξη «Live» κάτω από τον χάρτη, ώστε να φαίνεται ότι το realtime ζει.
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  // Χειροκίνητη/αυτόματη ανανέωση δεδομένων (βλ. refreshAll παρακάτω).
+  const [refreshing, setRefreshing] = useState(false);
 
   // ── Στατιστικά φόρτου / χρόνου ──
   const [workloadMatrix, setWorkloadMatrix] = useState(null); // { [jsDay]: { [hour]: avg } }
@@ -730,6 +749,28 @@ export default function LiveMap({ navHidden = false }) {
     setAvgDeliveryToday(Math.round(totalMins / valid.length));
   };
 
+  // Δίχτυ ασφαλείας πάνω από το realtime: αν η καρτέλα μείνει ανενεργή πολλή ώρα
+  // (background tab, λάπτοπ σε αναστολή, κομμένο websocket) τα δεδομένα ξαναπερνάνε
+  // από τη βάση χωρίς να αγγίζουμε τον χάρτη/APIProvider — ΟΧΙ reload της σελίδας,
+  // γιατί αυτό θα ξαναφόρτωνε το Google Maps script και θα χρέωνε νέο load αδίκως.
+  // ΔΕΝ περιλαμβάνει fetchWorkloadStats: αυτό δείχνει «Φόρτωση…» πάνω στο γράφημα
+  // φόρτου όσο τρέχει, κάτι που θα τρεμόπαιζε κάθε λίγα λεπτά χωρίς λόγο — τα
+  // ιστορικά στοιχεία φόρτου δεν χρειάζονται τέτοια συχνότητα ούτως ή άλλως.
+  const refreshAll = async ({ silent = false } = {}) => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchDrivers(),
+        fetchActiveOrders(),
+        fetchLastCompletedTimes(),
+        fetchTodayDeliveryStats(),
+      ]);
+      if (!silent) toast.success('Τα δεδομένα ανανεώθηκαν.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     fetchDrivers();
     fetchActiveOrders();
@@ -739,6 +780,9 @@ export default function LiveMap({ navHidden = false }) {
 
     releaseDueOrders();
     const releaseTimer = setInterval(releaseDueOrders, 15000);
+
+    // 5λεπτο fallback πάνω από το realtime — βλ. σχόλιο στο refreshAll παραπάνω.
+    const autoRefreshTimer = setInterval(() => refreshAll({ silent: true }), 5 * 60 * 1000);
 
     const driversChannel = supabase
       .channel('public:drivers_map_tracking')
@@ -822,6 +866,7 @@ export default function LiveMap({ navHidden = false }) {
 
     return () => {
       clearInterval(releaseTimer);
+      clearInterval(autoRefreshTimer);
       supabase.removeChannel(driversChannel);
       supabase.removeChannel(ordersChannel);
     };
@@ -1534,7 +1579,10 @@ export default function LiveMap({ navHidden = false }) {
         style={{ borderColor: 'var(--border-default)', backgroundColor: 'var(--bg-secondary)' }}
       >
         {/* ── Διανομείς σε βάρδια (οριζόντια λωρίδα κάτω από τον χάρτη) ── */}
-        <div className="flex-1 min-w-0 px-3 py-2.5">
+        {/* `relative` + pb-12: το κουτί τεντώνεται σε ύψος με τη διπλανή στήλη
+            φόρτου (flex row, stretch) — το κουμπί ανανέωσης πιάνει τη ΓΝΗΣΙΑ
+            κάτω δεξιά γωνία μέσω absolute, όχι απλώς μετά την τελευταία κάρτα. */}
+        <div className="relative flex-1 min-w-0 px-3 pt-2.5 pb-12">
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
               <Users size={13} /> Διανομείς σε βάρδια
@@ -1610,6 +1658,23 @@ export default function LiveMap({ navHidden = false }) {
               })}
             </div>
           )}
+
+          {/* Χειροκίνητη ανανέωση — ίδια δεδομένα με το αυτόματο 5λεπτο refresh
+              (βλ. refreshAll), απλά με κλικ. Κάτω δεξιά μέσα σε αυτό το πλαίσιο,
+              όχι reload σελίδας: δεν αγγίζει τον χάρτη/Google Maps API. */}
+          <div className="absolute bottom-2.5 right-3">
+            <button
+              type="button"
+              onClick={() => refreshAll()}
+              disabled={refreshing}
+              title="Χειροκίνητη ανανέωση δεδομένων (διανομείς, παραγγελίες)"
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+            >
+              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+              Ανανέωση
+            </button>
+          </div>
         </div>
 
         {/* ── Φόρτος (στη θέση των παλιών «Γρήγορων ενεργειών») ── */}
