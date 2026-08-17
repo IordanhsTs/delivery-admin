@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useCashFloat } from './useCashFloat';
+import { confirmDialog } from './ConfirmDialog';
 import {
-  Wallet, PlusCircle, Settings2, Save, ChevronLeft, ChevronRight,
-  AlertTriangle, RefreshCcw, User, Banknote,
+  Wallet, Fuel, PlusCircle, Settings2, Save, ChevronLeft, ChevronRight,
+  AlertTriangle, RefreshCcw, User, Banknote, CircleDollarSign, Undo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -75,6 +76,70 @@ export default function CashFloat() {
   }, [weekStart]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+  // ── Εκκρεμείς οφειλές σε διανομείς (ταμείο + βενζίνη, μαζί — βλ. 0023) ─────
+  // Δεν υπάρχει "για την εβδομάδα" φίλτρο εδώ, σκόπιμα: το «τι εκκρεμεί» δεν
+  // έχει σχέση με ποια εβδομάδα κοιτάει ο admin στο ιστορικό από κάτω.
+  const [pending, setPending] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [settlingId, setSettlingId] = useState(null);
+  const pendingTotal = pending.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+  const fetchPending = useCallback(async () => {
+    setPendingLoading(true);
+    const { data, error } = await supabase.rpc('admin_pending_expenses');
+    setPendingLoading(false);
+    if (error) { toast.error('Σφάλμα ανάκτησης εκκρεμών οφειλών: ' + error.message); return; }
+    setPending(data || []);
+  }, []);
+
+  useEffect(() => { fetchPending(); }, [fetchPending]);
+
+  async function settlePending(p) {
+    const ok = await confirmDialog(
+      `Είστε σίγουροι ότι ο/η ${p.driver_name} έλαβε ${eur(p.amount)} € (${p.kind === 'cash' ? 'POS' : 'Βενζίνη'});`,
+      { confirmLabel: 'Ναι, το έλαβε' },
+    );
+    if (!ok) return;
+
+    setSettlingId(p.id);
+    const { error } = await supabase.rpc('admin_set_expense_received', {
+      p_kind: p.kind, p_id: p.id, p_received: true,
+    });
+    setSettlingId(null);
+    if (error) { toast.error('Δεν ενημερώθηκε: ' + error.message); return; }
+    toast.success('Καταχωρήθηκε ως πληρωμένο.');
+    fetchPending();
+    fetchSettled();
+  }
+
+  // ── Πρόσφατα διευθετημένες — για αναίρεση κατά λάθος tick (kiosk ή admin) ──
+  const [settled, setSettled] = useState([]);
+  const [settledLoading, setSettledLoading] = useState(true);
+  const [showSettled, setShowSettled] = useState(false);
+  const [undoingId, setUndoingId] = useState(null);
+
+  const fetchSettled = useCallback(async () => {
+    setSettledLoading(true);
+    const { data, error } = await supabase.rpc('admin_settled_expenses', { p_limit: 20 });
+    setSettledLoading(false);
+    if (error) { toast.error('Σφάλμα ανάκτησης πληρωμένων: ' + error.message); return; }
+    setSettled(data || []);
+  }, []);
+
+  useEffect(() => { fetchSettled(); }, [fetchSettled]);
+
+  async function undoSettled(s) {
+    setUndoingId(s.id);
+    const { error } = await supabase.rpc('admin_set_expense_received', {
+      p_kind: s.kind, p_id: s.id, p_received: false,
+    });
+    setUndoingId(null);
+    if (error) { toast.error('Δεν αναιρέθηκε: ' + error.message); return; }
+    toast.success('Η δήλωση επανήλθε σε εκκρεμή.');
+    fetchSettled();
+    fetchPending();
+  }
 
   // ── Ανεφοδιασμός ──────────────────────────────────────────────────────────
   const [topupAmount, setTopupAmount] = useState('');
@@ -237,6 +302,91 @@ export default function CashFloat() {
             <PlusCircle size={16} /> {addingTopup ? 'Καταχώρηση…' : 'Προσθήκη'}
           </button>
         </form>
+      </div>
+
+      {/* ── Εκκρεμείς οφειλές σε διανομείς ──────────────────────────────── */}
+      <div className="p-5 mb-6 card-surface" style={card}>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 className="font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <CircleDollarSign size={18} /> Εκκρεμείς οφειλές σε διανομείς
+          </h3>
+          {pending.length > 0 && (
+            <span className="text-sm font-bold" style={{ color: 'var(--warning)' }}>
+              Σύνολο {eur(pendingTotal)} €
+            </span>
+          )}
+        </div>
+        {pendingLoading && <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</p>}
+        {!pendingLoading && pending.length === 0 && (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Καμία εκκρεμής οφειλή αυτή τη στιγμή.</p>
+        )}
+        <div className="space-y-2">
+          {pending.map((p) => {
+            const Icon = p.kind === 'cash' ? Wallet : Fuel;
+            return (
+              <div key={`${p.kind}-${p.id}`} className="flex items-center gap-3 py-2.5 px-3 rounded-xl" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                <Icon size={16} style={{ color: 'var(--text-muted)' }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                    <User size={13} style={{ color: 'var(--text-muted)' }} /> {p.driver_name} — {eur(p.amount)} €
+                  </div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {prettyDateTime(p.created_at)} · {p.kind === 'cash' ? 'POS' : 'Βενζίνη'}
+                  </div>
+                </div>
+                <button onClick={() => settlePending(p)} disabled={settlingId === p.id}
+                  className="px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)' }}>
+                  {settlingId === p.id ? 'Καταχώρηση…' : 'Πλήρωσα'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Πρόσφατα διευθετημένες — αναίρεση κατά λάθος tick ───────────── */}
+      <div className="p-5 mb-6 card-surface" style={card}>
+        <button onClick={() => setShowSettled((s) => !s)}
+          className="w-full flex items-center justify-between gap-2 text-left">
+          <h3 className="font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Undo2 size={18} /> Πρόσφατα διευθετημένες
+          </h3>
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+            {showSettled ? 'Απόκρυψη' : 'Εμφάνιση'}
+          </span>
+        </button>
+        {showSettled && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="overflow-hidden">
+            <div className="space-y-2 mt-4">
+              {settledLoading && <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</p>}
+              {!settledLoading && settled.length === 0 && (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Καμία πρόσφατη πληρωμή.</p>
+              )}
+              {settled.map((s) => {
+                const Icon = s.kind === 'cash' ? Wallet : Fuel;
+                return (
+                  <div key={`${s.kind}-${s.id}`} className="flex items-center gap-3 py-2.5 px-3 rounded-xl" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                    <Icon size={16} style={{ color: 'var(--text-muted)' }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                        <User size={13} style={{ color: 'var(--text-muted)' }} /> {s.driver_name} — {eur(s.amount)} €
+                      </div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Πληρώθηκε {prettyDateTime(s.received_at)} · {s.kind === 'cash' ? 'POS' : 'Βενζίνη'}
+                      </div>
+                    </div>
+                    <button onClick={() => undoSettled(s)} disabled={undoingId === s.id}
+                      className="px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                      style={subtleBtn}>
+                      {undoingId === s.id ? 'Αναίρεση…' : 'Αναίρεση'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* ── Πλοήγηση εβδομάδας ──────────────────────────────────────────── */}
