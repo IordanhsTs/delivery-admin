@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, isReadOnly } from './supabaseClient';
+import { supabase } from './supabaseClient';
 import { Megaphone, Plus, Save, Trash2, Pin, PinOff, Archive, ArchiveRestore, X, RefreshCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,10 +51,6 @@ export default function Announcements() {
   }
 
   async function submit() {
-    if (isReadOnly()) {
-      toast.error('Εφεδρική λειτουργία — το σύστημα είναι προσωρινά μόνο για ανάγνωση.');
-      return;
-    }
     const title = form.title.trim();
     const body = form.body.trim();
     if (!title || !body) {

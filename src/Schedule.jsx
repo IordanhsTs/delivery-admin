@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
-import { supabase, isReadOnly } from './supabaseClient';
+import { supabase } from './supabaseClient';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Wand2, Save, Send, Undo2,
   Settings2, Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Users, RefreshCcw,
@@ -285,10 +285,6 @@ export default function Schedule() {
   }
 
   async function save({ silent } = {}) {
-    if (isReadOnly()) {
-      toast.error('Εφεδρική λειτουργία — το σύστημα είναι προσωρινά μόνο για ανάγνωση.');
-      return false;
-    }
     setBusy(true);
     const { error } = await supabase.rpc('apply_week_schedule', {
       p_week_start: weekKey,

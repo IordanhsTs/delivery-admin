@@ -17,7 +17,7 @@ import Messages from './Messages';
 import OrderSearch from './OrderSearch';
 import Login from './Login';
 import { useStoreMessages } from './useStoreMessages';
-import ReadOnlyBanner from './ReadOnlyBanner';
+import BackupModeBanner from './BackupModeBanner';
 import ConfirmDialogHost from './ConfirmDialog';
 import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -666,7 +666,7 @@ export default function App() {
         className="flex-1 overflow-y-auto relative"
         style={{ backgroundColor: 'var(--bg-primary)' }}
       >
-        <ReadOnlyBanner />
+        <BackupModeBanner />
         {/* Ambient glow blobs */}
         <div
           className="fixed top-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full pointer-events-none opacity-30"

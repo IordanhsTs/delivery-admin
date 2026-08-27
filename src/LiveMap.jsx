@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { APIProvider, Map, useMap, ControlPosition } from '@vis.gl/react-google-maps';
-import { supabase, getTenantSchema, isReadOnly } from './supabaseClient';
+import { supabase, getTenantSchema } from './supabaseClient';
 import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
@@ -910,7 +910,6 @@ export default function LiveMap({ navHidden = false }) {
   };
 
   const assignOrderToDriver = async (orderId, driverId) => {
-    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const { error } = await supabase
       .from('orders')
       .update({ status: 'accepted', driver_id: driverId, accepted_at: new Date().toISOString() })
@@ -932,7 +931,6 @@ export default function LiveMap({ navHidden = false }) {
   // να μη γλιστρήσει μετάθεση σε παραγγελία που μόλις ολοκληρώθηκε.
   //
   const reassignOrder = async (orderId, newDriverId, newDriverName) => {
-    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
 
     const isConfirmed = await confirmDialog(
       `Μετάθεση της παραγγελίας στον διανομέα ${newDriverName};`,
@@ -972,7 +970,6 @@ export default function LiveMap({ navHidden = false }) {
   };
 
   const cancelOrder = async (orderId) => {
-    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;", { danger: true, confirmLabel: 'Ακύρωση παραγγελίας' });
     if (!isConfirmed) return;
 
@@ -1003,7 +1000,6 @@ export default function LiveMap({ navHidden = false }) {
   };
 
   const completeOrder = async (orderId) => {
-    if (isReadOnly()) { toast.warning("Εφεδρική λειτουργία — προσωρινά μόνο ανάγνωση."); return; }
     const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ολοκληρώσετε τη συγκεκριμένη παραγγελία;", { confirmLabel: 'Ολοκλήρωση' });
     if (!isConfirmed) return;
 
@@ -1090,7 +1086,7 @@ export default function LiveMap({ navHidden = false }) {
       {/* ΓΡΑΜΜΗ KPI ΠΑΝΩ ΑΠΟ ΤΟΝ ΧΑΡΤΗ: καταργήθηκε (απόφαση πελάτη). Οι ίδιοι
           αριθμοί ζουν πλέον στη «Σήμερα με μια ματιά» κάτω από τον χάρτη, ο
           φόρτος στην κάτω δεξιά κάρτα, και η κατάσταση συστήματος φαίνεται
-          μόνο όταν έχει σημασία — ως ReadOnlyBanner σε failover. */}
+          μόνο όταν έχει σημασία — ως BackupModeBanner σε failover. */}
 
       {/* ════════ ΣΩΜΑ: ΧΑΡΤΗΣ + ΔΕΞΙΑ ΣΤΗΛΗ ════════ */}
       <div className="flex flex-col md:flex-row md:flex-1 min-h-0">
