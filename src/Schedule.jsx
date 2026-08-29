@@ -853,38 +853,33 @@ export default function Schedule() {
               ))}
             </div>
             {DAYS_SHORT.map((d, dayIndex) => (
-              <div key={d} className="mb-1">
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setFocusDay(dayIndex)}
-                    className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline"
-                    style={{ color: 'var(--text-secondary)' }}>
-                    {d}
-                  </button>
-                  {hourCols.map((x) => {
-                    const have = coverage.counts[dayIndex][x];
-                    const need = coverage.minFor(dayIndex, x);
-                    const who = coverage.names[dayIndex][x];
-                    return (
-                      <button
-                        key={x}
-                        onClick={() => setFocusDay(dayIndex)}
-                        title={`${DAYS[dayIndex]} ${hourLabel(x)} — ${who.length ? who.join(', ') : 'κανείς'}${need ? ` (στόχος ${need})` : ''}`}
-                        className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
-                        style={{ ...hourStyle(dayIndex, x), border: '1px solid var(--border-subtle)' }}
-                      >
-                        {have || ''}
-                      </button>
-                    );
-                  })}
-                </div>
-                {/* Η δεξαμενή ευέλικτων διανομέων, ορατή χωρίς να χρειάζεται να
-                    ανοίξει ο διαχειριστής τη συγκεκριμένη ημέρα. */}
-                {allDayNames[dayIndex].length > 0 && (
-                  <div className="pl-12 text-[10px] flex items-center gap-1" style={{ color: 'var(--warning)' }}>
-                    <Sun size={10} />
-                    Όλη μέρα: {allDayNames[dayIndex].join(', ')}
-                  </div>
-                )}
+              <div key={d} className="flex items-center gap-1 mb-1">
+                {/* Διακριτικό ηλιάκι δίπλα στο όνομα της ημέρας αντί για ολόκληρη
+                    γραμμή κειμένου — τα ονόματα είναι στο title (hover) και στην
+                    πλήρη ένδειξη όταν ανοίξει η μέρα. */}
+                <button onClick={() => setFocusDay(dayIndex)}
+                  className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline flex items-center gap-0.5"
+                  style={{ color: 'var(--text-secondary)' }}
+                  title={allDayNames[dayIndex].length ? `Όλη μέρα: ${allDayNames[dayIndex].join(', ')}` : undefined}>
+                  {d}
+                  {allDayNames[dayIndex].length > 0 && <Sun size={10} style={{ color: 'var(--warning)' }} />}
+                </button>
+                {hourCols.map((x) => {
+                  const have = coverage.counts[dayIndex][x];
+                  const need = coverage.minFor(dayIndex, x);
+                  const who = coverage.names[dayIndex][x];
+                  return (
+                    <button
+                      key={x}
+                      onClick={() => setFocusDay(dayIndex)}
+                      title={`${DAYS[dayIndex]} ${hourLabel(x)} — ${who.length ? who.join(', ') : 'κανείς'}${need ? ` (στόχος ${need})` : ''}`}
+                      className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
+                      style={{ ...hourStyle(dayIndex, x), border: '1px solid var(--border-subtle)' }}
+                    >
+                      {have || ''}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
