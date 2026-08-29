@@ -175,6 +175,7 @@ export default function Schedule() {
             start: s.all_day ? '17:00' : s.start,
             end: s.all_day ? '23:00' : s.end,
             source: 'auto',
+            allDay: !!s.all_day,
           }));
           added = true;
         });
@@ -229,6 +230,7 @@ export default function Schedule() {
           start: s.all_day ? '17:00' : s.start,
           end: s.all_day ? '23:00' : s.end,
           source: 'auto',
+          allDay: !!s.all_day,
         }));
       });
     });
@@ -261,7 +263,9 @@ export default function Schedule() {
 
   const patchSlot = (driverId, date, index, patch) => {
     const existing = draft[driverId]?.[date] || [];
-    setSlots(driverId, date, existing.map((s, i) => (i === index ? { ...s, ...patch, source: 'manual' } : s)));
+    // Μόλις ο διαχειριστής ορίσει ο ίδιος τις ώρες, η ετικέτα «όλη μέρα» δεν
+    // ισχύει πια — αυτό ΕΙΝΑΙ η πραγματική ώρα, όχι η πρόταση 17:00-23:00.
+    setSlots(driverId, date, existing.map((s, i) => (i === index ? { ...s, ...patch, source: 'manual', allDay: false } : s)));
   };
 
   const removeSlot = (driverId, date, index) => {
@@ -986,18 +990,36 @@ export default function Schedule() {
                               </div>
                             );
                           }
+                          // «Όλη μέρα»: ξεχωριστό χρώμα ΚΑΙ ξεχωριστό κείμενο. Χωρίς αυτό το
+                          // κελί δείχνει «17:00–23:00» πανομοιότυπο με μια γραμμή που ο
+                          // διανομέας ζήτησε ρητά — ο διαχειριστής το αποθήκευνε σαν να
+                          // ήταν πραγματική ώρα, ενώ ο διανομέας εννοούσε πλήρη ευελιξία.
                           return (
                             <button key={index}
                               onClick={() => !publishedAt && setEditing({ driverId: driver.id, date, index })}
                               className="w-full mb-1 px-2 py-1 rounded-lg text-xs font-bold text-left"
-                              style={{
+                              style={s.allDay ? {
+                                backgroundColor: 'var(--warning-bg)',
+                                color: 'var(--warning)',
+                                border: '1px solid var(--warning-border)',
+                                cursor: publishedAt ? 'default' : 'pointer',
+                              } : {
                                 backgroundColor: s.source === 'manual' ? 'var(--accent)' : 'var(--accent-muted)',
                                 color: s.source === 'manual' ? '#fff' : 'var(--accent)',
                                 border: '1px solid var(--accent)',
                                 cursor: publishedAt ? 'default' : 'pointer',
                               }}
-                              title={s.source === 'manual' ? 'Χειροκίνητη αλλαγή' : 'Από τη δήλωση του διανομέα'}>
-                              {s.start}–{s.end}
+                              title={s.allDay
+                                ? `Δήλωσε διαθέσιμος όλη μέρα — πρόταση ${s.start}–${s.end}, πάτησε για να ορίσεις τις πραγματικές ώρες`
+                                : (s.source === 'manual' ? 'Χειροκίνητη αλλαγή' : 'Από τη δήλωση του διανομέα')}>
+                              {s.allDay ? (
+                                <>
+                                  <div>Όλη μέρα</div>
+                                  <div className="font-normal" style={{ fontSize: 9, opacity: 0.85 }}>
+                                    {s.start}–{s.end} πρόταση
+                                  </div>
+                                </>
+                              ) : `${s.start}–${s.end}`}
                             </button>
                           );
                         })}
