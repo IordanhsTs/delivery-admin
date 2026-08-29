@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { supabase } from './supabaseClient';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Wand2, Save, Send, Undo2,
-  Settings2, Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Users, RefreshCcw,
+  Settings2, Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Users, RefreshCcw, Sun,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -455,6 +455,23 @@ export default function Schedule() {
       .map(([id]) => id);
   }, [focusDay, coverage, hourCols, driverName]);
 
+  // ── Διαθέσιμοι «όλη μέρα» ανά ημέρα ────────────────────────────────────────
+  // Ξεχωριστό από το `coverage`: εδώ μας ενδιαφέρει ΤΙ ΔΗΛΩΣΕ ο διανομέας, όχι
+  // τι μπήκε (ή δεν μπήκε) στο προσχέδιο — γι' αυτό διαβάζει από `availability`,
+  // όχι από `draft`. Ο διαχειριστής το χρησιμοποιεί σαν «δεξαμενή»: βλέπει τα
+  // κενά της μέρας και μετά ποιον από εδώ μπορεί να βάλει να τα καλύψει.
+  const allDayNames = useMemo(() => {
+    const byDay = Array.from({ length: 7 }, () => []);
+    Object.entries(availability).forEach(([driverId, byDate]) => {
+      Object.entries(byDate).forEach(([date, slots]) => {
+        const dayIndex = dates.indexOf(date);
+        if (dayIndex < 0 || !slots.some((s) => s.all_day)) return;
+        byDay[dayIndex].push(driverName(driverId));
+      });
+    });
+    return byDay;
+  }, [availability, dates, driverName]);
+
   // ── Ρυθμίσεις ─────────────────────────────────────────────────────────────
   async function saveTarget(target) {
     const payload = {
@@ -820,6 +837,22 @@ export default function Schedule() {
           </div>
         </div>
 
+        {/* Η «δεξαμενή» της ημέρας: ποιος δήλωσε πλήρη ευελιξία, για να τον
+            χρησιμοποιήσει ο διαχειριστής στα κενά που βλέπει παρακάτω. */}
+        {focusDay !== null && (
+          <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2"
+            style={allDayNames[focusDay].length
+              ? { backgroundColor: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)' }
+              : { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>
+            <Sun size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              {allDayNames[focusDay].length ? (
+                <>Όλη μέρα διαθέσιμοι: <strong>{allDayNames[focusDay].join(', ')}</strong></>
+              ) : 'Κανείς δεν δήλωσε διαθέσιμος όλη μέρα αυτή την ημέρα.'}
+            </span>
+          </div>
+        )}
+
         {focusDay === null ? (
           <div style={{ minWidth: Math.max(420, hourCols.length * 26 + 48) }}>
             <div className="flex items-center gap-1 mb-1 pl-12">
@@ -830,28 +863,38 @@ export default function Schedule() {
               ))}
             </div>
             {DAYS_SHORT.map((d, dayIndex) => (
-              <div key={d} className="flex items-center gap-1 mb-1">
-                <button onClick={() => setFocusDay(dayIndex)}
-                  className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline"
-                  style={{ color: 'var(--text-secondary)' }}>
-                  {d}
-                </button>
-                {hourCols.map((x) => {
-                  const have = coverage.counts[dayIndex][x];
-                  const need = coverage.minFor(dayIndex, x);
-                  const who = coverage.names[dayIndex][x];
-                  return (
-                    <button
-                      key={x}
-                      onClick={() => setFocusDay(dayIndex)}
-                      title={`${DAYS[dayIndex]} ${hourLabel(x)} — ${who.length ? who.join(', ') : 'κανείς'}${need ? ` (στόχος ${need})` : ''}`}
-                      className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
-                      style={{ ...hourStyle(dayIndex, x), border: '1px solid var(--border-subtle)' }}
-                    >
-                      {have || ''}
-                    </button>
-                  );
-                })}
+              <div key={d} className="mb-1">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setFocusDay(dayIndex)}
+                    className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline"
+                    style={{ color: 'var(--text-secondary)' }}>
+                    {d}
+                  </button>
+                  {hourCols.map((x) => {
+                    const have = coverage.counts[dayIndex][x];
+                    const need = coverage.minFor(dayIndex, x);
+                    const who = coverage.names[dayIndex][x];
+                    return (
+                      <button
+                        key={x}
+                        onClick={() => setFocusDay(dayIndex)}
+                        title={`${DAYS[dayIndex]} ${hourLabel(x)} — ${who.length ? who.join(', ') : 'κανείς'}${need ? ` (στόχος ${need})` : ''}`}
+                        className="flex-1 h-6 rounded flex items-center justify-center text-[9px] font-bold"
+                        style={{ ...hourStyle(dayIndex, x), border: '1px solid var(--border-subtle)' }}
+                      >
+                        {have || ''}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Η δεξαμενή ευέλικτων διανομέων, ορατή χωρίς να χρειάζεται να
+                    ανοίξει ο διαχειριστής τη συγκεκριμένη ημέρα. */}
+                {allDayNames[dayIndex].length > 0 && (
+                  <div className="pl-12 text-[10px] flex items-center gap-1" style={{ color: 'var(--warning)' }}>
+                    <Sun size={10} />
+                    Όλη μέρα: {allDayNames[dayIndex].join(', ')}
+                  </div>
+                )}
               </div>
             ))}
           </div>
