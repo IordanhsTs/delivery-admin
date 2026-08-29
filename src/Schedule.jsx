@@ -170,13 +170,14 @@ export default function Schedule() {
         let added = false;
         Object.entries(avail[dr.id] || {}).forEach(([date, slots]) => {
           if (d[dr.id]?.[date]?.length) return;  // ο διαχειριστής έχει ήδη βάλει κάτι εδώ
+          // «Όλη μέρα» ΔΕΝ μπαίνει ως πρόταση ωρών στο προσχέδιο — δεν είναι
+          // βάρδια, είναι δήλωση ευελιξίας. Φαίνεται στην ενότητα «Διαθέσιμοι
+          // όλη μέρα» δίπλα στην κάλυψη· ο διαχειριστής τον βάζει ο ίδιος με
+          // πραγματικές ώρες αν τον χρειαστεί για να καλύψει κενό.
+          const specific = slots.filter((s) => !s.all_day);
+          if (!specific.length) return;
           if (!d[dr.id]) d[dr.id] = {};
-          d[dr.id][date] = slots.map((s) => ({
-            start: s.all_day ? '17:00' : s.start,
-            end: s.all_day ? '23:00' : s.end,
-            source: 'auto',
-            allDay: !!s.all_day,
-          }));
+          d[dr.id][date] = specific.map((s) => ({ start: s.start, end: s.end, source: 'auto' }));
           added = true;
         });
         if (added) mergedNames.push(dr.full_name);
@@ -223,15 +224,11 @@ export default function Schedule() {
     Object.entries(availability).forEach(([driverId, byDate]) => {
       next[driverId] = {};
       Object.entries(byDate).forEach(([date, slots]) => {
-        next[driverId][date] = slots.map((s) => ({
-          // «Όλη την ημέρα» δεν μπορεί να μπει ως 00:00-23:59 σε πρόγραμμα
-          // βάρδιας: ο διανομέας δήλωσε ευελιξία, όχι 24ωρη παρουσία. Μπαίνει
-          // ένα κανονικό βράδυ και το διορθώνει ο διαχειριστής αν θέλει.
-          start: s.all_day ? '17:00' : s.start,
-          end: s.all_day ? '23:00' : s.end,
-          source: 'auto',
-          allDay: !!s.all_day,
-        }));
+        // «Όλη μέρα» δεν μπαίνει ως πρόταση ωρών — δες σχόλιο στο load().
+        const specific = slots.filter((s) => !s.all_day);
+        if (specific.length) {
+          next[driverId][date] = specific.map((s) => ({ start: s.start, end: s.end, source: 'auto' }));
+        }
       });
     });
     setDraft(next);
@@ -263,9 +260,7 @@ export default function Schedule() {
 
   const patchSlot = (driverId, date, index, patch) => {
     const existing = draft[driverId]?.[date] || [];
-    // Μόλις ο διαχειριστής ορίσει ο ίδιος τις ώρες, η ετικέτα «όλη μέρα» δεν
-    // ισχύει πια — αυτό ΕΙΝΑΙ η πραγματική ώρα, όχι η πρόταση 17:00-23:00.
-    setSlots(driverId, date, existing.map((s, i) => (i === index ? { ...s, ...patch, source: 'manual', allDay: false } : s)));
+    setSlots(driverId, date, existing.map((s, i) => (i === index ? { ...s, ...patch, source: 'manual' } : s)));
   };
 
   const removeSlot = (driverId, date, index) => {
@@ -838,18 +833,13 @@ export default function Schedule() {
         </div>
 
         {/* Η «δεξαμενή» της ημέρας: ποιος δήλωσε πλήρη ευελιξία, για να τον
-            χρησιμοποιήσει ο διαχειριστής στα κενά που βλέπει παρακάτω. */}
-        {focusDay !== null && (
+            χρησιμοποιήσει ο διαχειριστής στα κενά που βλέπει παρακάτω. Τελείως
+            κρυφό όταν κανείς δεν το έχει επιλέξει — δεν είναι ανάγκη να το λέει. */}
+        {focusDay !== null && allDayNames[focusDay].length > 0 && (
           <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2"
-            style={allDayNames[focusDay].length
-              ? { backgroundColor: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)' }
-              : { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>
+            style={{ backgroundColor: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)' }}>
             <Sun size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span>
-              {allDayNames[focusDay].length ? (
-                <>Όλη μέρα διαθέσιμοι: <strong>{allDayNames[focusDay].join(', ')}</strong></>
-              ) : 'Κανείς δεν δήλωσε διαθέσιμος όλη μέρα αυτή την ημέρα.'}
-            </span>
+            <span>Διαθέσιμοι όλη μέρα: <strong>{allDayNames[focusDay].join(', ')}</strong></span>
           </div>
         )}
 
@@ -1033,36 +1023,18 @@ export default function Schedule() {
                               </div>
                             );
                           }
-                          // «Όλη μέρα»: ξεχωριστό χρώμα ΚΑΙ ξεχωριστό κείμενο. Χωρίς αυτό το
-                          // κελί δείχνει «17:00–23:00» πανομοιότυπο με μια γραμμή που ο
-                          // διανομέας ζήτησε ρητά — ο διαχειριστής το αποθήκευνε σαν να
-                          // ήταν πραγματική ώρα, ενώ ο διανομέας εννοούσε πλήρη ευελιξία.
                           return (
                             <button key={index}
                               onClick={() => !publishedAt && setEditing({ driverId: driver.id, date, index })}
                               className="w-full mb-1 px-2 py-1 rounded-lg text-xs font-bold text-left"
-                              style={s.allDay ? {
-                                backgroundColor: 'var(--warning-bg)',
-                                color: 'var(--warning)',
-                                border: '1px solid var(--warning-border)',
-                                cursor: publishedAt ? 'default' : 'pointer',
-                              } : {
+                              style={{
                                 backgroundColor: s.source === 'manual' ? 'var(--accent)' : 'var(--accent-muted)',
                                 color: s.source === 'manual' ? '#fff' : 'var(--accent)',
                                 border: '1px solid var(--accent)',
                                 cursor: publishedAt ? 'default' : 'pointer',
                               }}
-                              title={s.allDay
-                                ? `Δήλωσε διαθέσιμος όλη μέρα — πρόταση ${s.start}–${s.end}, πάτησε για να ορίσεις τις πραγματικές ώρες`
-                                : (s.source === 'manual' ? 'Χειροκίνητη αλλαγή' : 'Από τη δήλωση του διανομέα')}>
-                              {s.allDay ? (
-                                <>
-                                  <div>Όλη μέρα</div>
-                                  <div className="font-normal" style={{ fontSize: 9, opacity: 0.85 }}>
-                                    {s.start}–{s.end} πρόταση
-                                  </div>
-                                </>
-                              ) : `${s.start}–${s.end}`}
+                              title={s.source === 'manual' ? 'Χειροκίνητη αλλαγή' : 'Από τη δήλωση του διανομέα'}>
+                              {s.start}–{s.end}
                             </button>
                           );
                         })}
