@@ -856,9 +856,11 @@ export default function Schedule() {
               <div key={d} className="flex items-center gap-1 mb-1">
                 {/* Διακριτικό ηλιάκι δίπλα στο όνομα της ημέρας αντί για ολόκληρη
                     γραμμή κειμένου — τα ονόματα είναι στο title (hover) και στην
-                    πλήρη ένδειξη όταν ανοίξει η μέρα. */}
+                    πλήρη ένδειξη όταν ανοίξει η μέρα. justify-between (όχι gap
+                    δίπλα στο κείμενο) ώστε το ηλιάκι να κάθεται πάντα στην ίδια
+                    άκρη της στήλης, σε ευθεία κάθετη γραμμή σε όλες τις μέρες. */}
                 <button onClick={() => setFocusDay(dayIndex)}
-                  className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline flex items-center gap-0.5"
+                  className="w-11 text-[11px] font-bold shrink-0 text-left hover:underline flex items-center justify-between"
                   style={{ color: 'var(--text-secondary)' }}
                   title={allDayNames[dayIndex].length ? `Όλη μέρα: ${allDayNames[dayIndex].join(', ')}` : undefined}>
                   {d}
