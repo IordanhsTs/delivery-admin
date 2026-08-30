@@ -108,7 +108,7 @@ export default function Schedule() {
       const [driverRes, availRes, weeksRes, shiftRes, schedRes, targetRes, setRes] = await Promise.all([
         supabase.from('drivers').select('id, full_name, is_active, is_blocked').order('full_name'),
         supabase.from('driver_availability')
-          .select('driver_id, work_date, start_time, end_time, all_day')
+          .select('driver_id, work_date, start_time, end_time, all_day, by_admin')
           .eq('week_start', weekKey).order('work_date').order('start_time'),
         supabase.from('driver_availability_weeks')
           .select('driver_id, updated_at, revisions').eq('week_start', weekKey),
@@ -133,7 +133,8 @@ export default function Schedule() {
         if (!avail[r.driver_id]) avail[r.driver_id] = {};
         if (!avail[r.driver_id][r.work_date]) avail[r.driver_id][r.work_date] = [];
         avail[r.driver_id][r.work_date].push({
-          start: hhmm(r.start_time), end: hhmm(r.end_time), all_day: r.all_day,
+          start: hhmm(r.start_time), end: hhmm(r.end_time),
+          all_day: r.all_day, by_admin: r.by_admin,
         });
       });
       setAvailability(avail);
@@ -249,9 +250,11 @@ export default function Schedule() {
   };
 
   const addSlot = (driverId, date) => {
-    const declared = availability[driverId]?.[date]?.[0];
+    // Το «όλη μέρα» (00:00-23:59) δεν είναι πρόταση ωρών — αν είναι η μόνη
+    // δήλωση, ξεκινάμε από το προεπιλεγμένο βραδινό και το αλλάζει ο χρήστης.
+    const declared = (availability[driverId]?.[date] || []).find((x) => !x.all_day);
     const existing = draft[driverId]?.[date] || [];
-    const fresh = declared && !declared.all_day
+    const fresh = declared
       ? { start: declared.start, end: declared.end, source: 'auto' }
       : { start: '17:00', end: '23:00', source: 'manual' };
     setSlots(driverId, date, [...existing, fresh]);
@@ -268,6 +271,60 @@ export default function Schedule() {
     setSlots(driverId, date, existing.filter((_, i) => i !== index));
     setEditing(null);
   };
+
+  // ── «Διαθέσιμος όλη μέρα», γραμμένο από τον διαχειριστή ───────────────────
+  // Αίτημα πελάτη 30/08/2026: ο διανομέας που δεν έχει πρόσβαση στην εφαρμογή
+  // τηλεφωνεί και λέει «τη Δευτέρα δουλεύω, βάλε ό,τι ώρες θες». Χωρίς αυτό, ο
+  // διαχειριστής το κρατούσε σε χαρτί — και το Σάββατο δεν το θυμόταν.
+  //
+  // Γράφει στον ΙΔΙΟ πίνακα με τη δήλωση του διανομέα (`driver_availability`),
+  // γιατί είναι η ίδια πληροφορία με άλλη πηγή· το `by_admin` κρατά την
+  // προέλευση. ΔΕΝ γράφει στο `driver_availability_weeks`: εκείνο απαντά στο
+  // «ποιος έχει υποβάλει από την εφαρμογή» και δεν πρέπει να λέει ψέματα.
+  //
+  // Ενημερώνει την τοπική κατάσταση αντί να ξαναφορτώσει: ένα load() θα
+  // ξανάχτιζε το προσχέδιο από τη βάση και θα έσβηνε τις μη αποθηκευμένες
+  // αλλαγές του διαχειριστή.
+  async function toggleAllDay(driverId, date) {
+    if (publishedAt) return;
+    const slots = availability[driverId]?.[date] || [];
+    const ownDeclaration = slots.find((s) => s.all_day && !s.by_admin);
+    if (ownDeclaration) {
+      toast.info('Το έχει δηλώσει ο ίδιος ο διανομέας από την εφαρμογή — δεν το σβήνεις από εδώ.');
+      return;
+    }
+    const mine = slots.some((s) => s.all_day && s.by_admin);
+
+    setBusy(true);
+    const { error } = mine
+      ? await supabase.from('driver_availability').delete()
+          .eq('driver_id', driverId).eq('week_start', weekKey)
+          .eq('work_date', date).eq('all_day', true).eq('by_admin', true)
+      // Κρατάμε ώρες 00:00-23:59 όπως και η εφαρμογή του διανομέα, ώστε καμία
+      // μελλοντική ανάγνωση να μη χρειάζεται ειδική περίπτωση για το all_day.
+      : await supabase.from('driver_availability').insert({
+          driver_id: driverId, week_start: weekKey, work_date: date,
+          start_time: '00:00', end_time: '23:59', all_day: true, by_admin: true,
+        });
+    setBusy(false);
+
+    if (error) {
+      toast.error('Δεν αποθηκεύτηκε: ' + error.message);
+      return;
+    }
+
+    setAvailability((prev) => {
+      const byDate = { ...(prev[driverId] || {}) };
+      const rest = (byDate[date] || []).filter((s) => !(s.all_day && s.by_admin));
+      const next = mine
+        ? rest
+        : [...rest, { start: '00:00', end: '23:59', all_day: true, by_admin: true }];
+      if (next.length) byDate[date] = next;
+      else delete byDate[date];
+      return { ...prev, [driverId]: byDate };
+    });
+    toast.success(mine ? 'Αφαιρέθηκε.' : 'Καταγράφηκε «διαθέσιμος όλη μέρα».');
+  }
 
   // ── Αποθήκευση / δημοσίευση ───────────────────────────────────────────────
   function draftToPayload() {
@@ -429,7 +486,22 @@ export default function Schedule() {
     return out;
   }, [gaps]);
 
-  const notSubmitted = drivers.filter((d) => !submitted[d.id]);
+  // Ποιων διανομέων τη διαθεσιμότητα την πέρασε ο ίδιος ο διαχειριστής.
+  const adminNoted = useMemo(() => {
+    const set = new Set();
+    Object.entries(availability).forEach(([driverId, byDate]) => {
+      if (Object.values(byDate).some((slots) => slots.some((s) => s.by_admin))) {
+        set.add(driverId);
+      }
+    });
+    return set;
+  }, [availability]);
+
+  // «Δεν δήλωσαν» = αυτοί που πρέπει ακόμη να κυνηγήσει. Όποιον κατέγραψε ο
+  // ίδιος τηλεφωνικά τον έχει ήδη τακτοποιήσει, οπότε βγαίνει από τη λίστα και
+  // αναφέρεται χωριστά — αλλιώς θα τηλεφωνούσε δεύτερη φορά στον ίδιο.
+  const notSubmitted = drivers.filter((d) => !submitted[d.id] && !adminNoted.has(d.id));
+  const notedOnly = drivers.filter((d) => !submitted[d.id] && adminNoted.has(d.id));
   const visibleDays = focusDay === null ? [0, 1, 2, 3, 4, 5, 6] : [focusDay];
 
   // ── Στήλες της προβολής ημέρας ────────────────────────────────────────────
@@ -760,7 +832,16 @@ export default function Schedule() {
               Δεν δήλωσαν: {notSubmitted.map((d) => d.full_name).join(', ')}
             </p>
           ) : (
-            <p className="text-xs" style={{ color: 'var(--success)' }}>Δήλωσαν όλοι.</p>
+            // «Δήλωσαν όλοι» ΜΟΝΟ όταν όντως δήλωσαν όλοι μόνοι τους: αν κάποιους
+            // τους πέρασε ο διαχειριστής, πράσινο «δήλωσαν όλοι» θα ήταν ψέμα.
+            <p className="text-xs" style={{ color: 'var(--success)' }}>
+              {notedOnly.length ? 'Δεν εκκρεμεί κανείς.' : 'Δήλωσαν όλοι.'}
+            </p>
+          )}
+          {notedOnly.length > 0 && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Καταγράφηκαν από εσένα: {notedOnly.map((d) => d.full_name).join(', ')}
+            </p>
           )}
         </div>
 
@@ -980,10 +1061,11 @@ export default function Schedule() {
                 <tr key={driver.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                   <td className="px-4 py-2 sticky left-0" style={{ backgroundColor: 'var(--bg-card)' }}>
                     <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{driver.full_name}</div>
-                    <div className="text-[11px]" style={{ color: submitted[driver.id] ? 'var(--text-muted)' : 'var(--warning)' }}>
+                    <div className="text-[11px]"
+                         style={{ color: submitted[driver.id] || adminNoted.has(driver.id) ? 'var(--text-muted)' : 'var(--warning)' }}>
                       {submitted[driver.id]
                         ? `δήλωσε ${new Date(submitted[driver.id].updated_at).toLocaleDateString('el-GR')}`
-                        : 'χωρίς δήλωση'}
+                        : adminNoted.has(driver.id) ? 'το κατέγραψες εσύ' : 'χωρίς δήλωση'}
                     </div>
                   </td>
 
@@ -991,6 +1073,10 @@ export default function Schedule() {
                     const date = dates[dayIndex];
                     const slots = draft[driver.id]?.[date] || [];
                     const declared = availability[driver.id]?.[date] || [];
+                    // «Όλη μέρα» δεν είναι βάρδια — έχει δική του ένδειξη και
+                    // δεν μπερδεύεται με τις ώρες στη γραμμή «δήλωσε …».
+                    const allDay = declared.find((x) => x.all_day);
+                    const declaredHours = declared.filter((x) => !x.all_day);
                     return (
                       <td key={date} className="px-1.5 py-2 align-top" style={{ minWidth: 118 }}>
                         {slots.map((s, index) => {
@@ -1036,21 +1122,54 @@ export default function Schedule() {
                           );
                         })}
 
+                        {/* «Βάλε ό,τι ώρες θες» — δήλωση ευελιξίας, όχι ωράριο.
+                            Μένει ορατή ΚΑΙ όταν έχει μπει βάρδια: ο διαχειριστής
+                            πρέπει να ξέρει ότι μπορεί να την αλλάξει ελεύθερα. */}
+                        {allDay && (
+                          // Κείμενο σε --text-primary, όχι --warning: το πορτοκαλί
+                          // πάνω στο --warning-bg δίνει 3.07 στο ανοιχτό θέμα (μετρημένο)
+                          // και η ένδειξη είναι 11px. Το χρώμα του σήματος το κρατά το
+                          // ηλιάκι — ίδια λύση με τα chips ονομάτων της κάλυψης.
+                          <div className="mb-1 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1"
+                            style={{ backgroundColor: 'var(--warning-bg)', color: 'var(--text-primary)', border: '1px solid var(--warning-border)' }}
+                            title={allDay.by_admin
+                              ? 'Το κατέγραψες εσύ — πάτα ξανά τον ήλιο για να το αφαιρέσεις'
+                              : 'Το δήλωσε ο διανομέας από την εφαρμογή'}>
+                            <Sun size={11} style={{ color: 'var(--warning)', flexShrink: 0 }} /> Όλη μέρα
+                          </div>
+                        )}
+
                         {/* Τι είχε δηλώσει, όταν δεν μπήκε αυτούσιο στο πρόγραμμα.
                             Χωρίς αυτό ο διαχειριστής θα έπρεπε να θυμάται τι ζήτησε ο καθένας. */}
-                        {declared.length > 0 && !slots.length && (
+                        {declaredHours.length > 0 && !slots.length && (
                           <div className="text-[10px] leading-tight mb-1" style={{ color: 'var(--text-muted)' }}>
-                            δήλωσε {declared.map((d) => (d.all_day ? 'όλη μέρα' : `${d.start}–${d.end}`)).join(', ')}
+                            δήλωσε {declaredHours.map((d) => `${d.start}–${d.end}`).join(', ')}
                           </div>
                         )}
 
                         {!publishedAt && (
-                          <button onClick={() => addSlot(driver.id, date)}
-                            className="w-full py-1 rounded-lg flex items-center justify-center"
-                            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px dashed var(--border-default)' }}
-                            title="Προσθήκη βάρδιας">
-                            <Plus size={12} />
-                          </button>
+                          <div className="flex gap-1">
+                            <button onClick={() => addSlot(driver.id, date)}
+                              className="flex-1 py-1 rounded-lg flex items-center justify-center"
+                              style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px dashed var(--border-default)' }}
+                              title="Πρόσθεσε ωράριο με το χέρι">
+                              <Plus size={12} />
+                            </button>
+                            {/* Ο ήλιος είναι διακόπτης: χωρίς ένδειξη = δεν έχει
+                                δηλωθεί τίποτα, γεμάτος = «όλη μέρα». Ό,τι δήλωσε
+                                ο ίδιος ο διανομέας δεν σβήνεται από εδώ. */}
+                            <button onClick={() => toggleAllDay(driver.id, date)}
+                              disabled={busy || (allDay && !allDay.by_admin)}
+                              className="px-2 py-1 rounded-lg flex items-center justify-center disabled:opacity-40"
+                              style={allDay
+                                ? { backgroundColor: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)' }
+                                : { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px dashed var(--border-default)' }}
+                              title={allDay
+                                ? (allDay.by_admin ? 'Αφαίρεση του «διαθέσιμος όλη μέρα»' : 'Το δήλωσε ο ίδιος ο διανομέας')
+                                : 'Μου είπε «βάλε ό,τι ώρες θες» — διαθέσιμος όλη μέρα'}>
+                              <Sun size={12} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     );
@@ -1068,7 +1187,12 @@ export default function Schedule() {
         <strong style={{ color: 'var(--text-primary)' }}>μόνη της στο προσχέδιο</strong> — δεν εγκρίνεις τίποτα.
         Ό,τι αλλάξεις με το χέρι σημειώνεται με γεμάτο χρυσό και δεν το πατάει καμία νέα δήλωση· αν ο διανομέας
         ξαναδηλώσει μετά την τελευταία σου αποθήκευση, το νέο του ωράριο μπαίνει στις ημέρες που εσύ έχεις αφήσει
-        κενές. Το κουμπί «Επαναφορά από δηλώσεις» ξαναχτίζει το προσχέδιο από το μηδέν. Με τη{' '}
+        κενές. Το κουμπί «Επαναφορά από δηλώσεις» ξαναχτίζει το προσχέδιο από το μηδέν.
+        {' '}<strong style={{ color: 'var(--text-primary)' }}>Για όποιον δεν μπορεί να δηλώσει μόνος του</strong>{' '}
+        (χαλασμένο κινητό, δεν μπαίνει στην εφαρμογή) γράφεις εσύ στο κελί του: με το{' '}
+        <strong style={{ color: 'var(--text-primary)' }}>+</strong> βάζεις ώρες με το χέρι, με τον{' '}
+        <strong style={{ color: 'var(--warning)' }}>ήλιο</strong> καταγράφεις ότι σου είπε «βάλε ό,τι ώρες θες» —
+        μένει σημειωμένο ως «όλη μέρα» για να το θυμάσαι όταν καλύπτεις τα κενά. Με τη{' '}
         <strong>Δημοσίευση</strong> το πρόγραμμα γίνεται ορατό στους διανομείς («Το πρόγραμμά μου») και κλειδώνουν
         οι δηλώσεις της εβδομάδας.
       </div>
