@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useBackClose } from './backNav';
 import { STORE_CATEGORIES } from './storeCategories';
 import { invokeWithAuthRetry } from './pushErrors';
 
@@ -142,6 +143,13 @@ export default function StoreManagement() {
   const [openStore, setOpenStore] = useState(null);
   const [openCourier, setOpenCourier] = useState(null);
   const [creating, setCreating] = useState(null); // 'store' | 'courier' | null
+
+  // Το «πίσω» του κινητού κλείνει πρώτα το συρτάρι — δεν φεύγει από τη Διαχείριση.
+  useBackClose(!!(openStore || openCourier || creating), () => {
+    setOpenStore(null);
+    setOpenCourier(null);
+    setCreating(null);
+  });
 
   const fetchStores = useCallback(async () => {
     setLoading(l => ({ ...l, stores: true }));

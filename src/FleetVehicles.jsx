@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useBackClose } from './backNav';
 
 // ── Στόλος εταιρικών μηχανών (αίτημα πελάτη 05/08/2026) ─────────────────────
 // Μία καρτέλα ανά μηχανάκι.
@@ -154,6 +155,9 @@ export default function FleetVehicles() {
   const [odoAlerts, setOdoAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState(null);
+
+  // Το «πίσω» του κινητού κλείνει πρώτα την καρτέλα της μηχανής.
+  useBackClose(!!openId, () => setOpenId(null));
 
   const fetchFleet = useCallback(async () => {
     setLoading(true);

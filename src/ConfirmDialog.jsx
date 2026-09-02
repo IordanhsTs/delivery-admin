@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
+import { useBackClose } from './backNav';
 
 // Promise-based replacement for window.confirm(), styled to match the rest of the
 // app's chrome (card-glass + CSS variables). Only one request is ever pending at a
@@ -35,6 +36,10 @@ export default function ConfirmDialogHost() {
       return null;
     });
   }, []);
+
+  // Το «πίσω» του κινητού κλείνει το παράθυρο σαν να πάτησε «Ακύρωση», αντί να
+  // αλλάξει ενότητα από κάτω.
+  useBackClose(!!request, () => close(false));
 
   return (
     <AnimatePresence>

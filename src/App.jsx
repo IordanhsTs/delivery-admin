@@ -19,6 +19,7 @@ import Login from './Login';
 import { useStoreMessages } from './useStoreMessages';
 import BackupModeBanner from './BackupModeBanner';
 import ConfirmDialogHost from './ConfirmDialog';
+import { useSectionHistory, useBackClose } from './backNav';
 import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -253,6 +254,14 @@ export default function App() {
   // αποθηκεύεται πουθενά, και σε ΚΑΘΕ άλλη καρτέλα το μενού είναι πάντα καρφωμένο.
   const [navOpenOnMap, setNavOpenOnMap] = useState(true);
 
+  // ΚΟΥΜΠΙ «ΠΙΣΩ» ΤΟΥ ΚΙΝΗΤΟΥ: η εφαρμογή είναι εγκατεστημένη ως συντόμευση στην
+  // αρχική οθόνη, οπότε το «πίσω» πρέπει να γυρνάει στην προηγούμενη ενότητα
+  // αντί να κλείνει την εφαρμογή. Το `goToTab` αντικαθιστά το `setActiveTab` σε
+  // ΟΛΑ τα κουμπιά του μενού — μόνο έτσι γράφεται η ενότητα στο ιστορικό.
+  const goToTab = useSectionHistory({ enabled: isAuthenticated, activeTab, setActiveTab });
+  // Το αναδυόμενο μενού «Περισσότερα» κλείνει πρώτο, πριν αλλάξει ενότητα.
+  useBackClose(moreOpen, () => setMoreOpen(false));
+
   const isDark = theme === 'dark';
   const navHidden = activeTab === 'map' && !navOpenOnMap;
 
@@ -409,7 +418,7 @@ export default function App() {
               {NAV_ITEMS.filter(item => MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, shortLabel }) => (
                 <button
                   key={id}
-                  onClick={() => { setActiveTab(id); setMoreOpen(false); }}
+                  onClick={() => { goToTab(id); setMoreOpen(false); }}
                   className="relative flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200"
                   style={getNavStyle(id)}
                 >
@@ -445,7 +454,7 @@ export default function App() {
                 {NAV_ITEMS.filter(item => !MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, fullLabel, shortLabel }) => (
                   <button
                     key={id}
-                    onClick={() => { setActiveTab(id); setMoreOpen(false); }}
+                    onClick={() => { goToTab(id); setMoreOpen(false); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
                     style={getNavStyle(id)}
                   >
@@ -541,7 +550,7 @@ export default function App() {
           {NAV_ITEMS.map(({ id, Icon, shortLabel, fullLabel }) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
+              onClick={() => goToTab(id)}
               className="relative flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
               style={getNavStyle(id)}
               onMouseEnter={e => {
