@@ -5,10 +5,12 @@ import { Receipt, Download, Wallet, Banknote, TrendingUp, Building, UserCheck } 
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { fetchAllRows, PAGE_SIZE, HARD_CAP } from './fetchAll';
 
 export default function BillingDashboard() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
 
   // Βοηθητική συνάρτηση για το format YYYY-MM-DDTHH:mm
   const formatDateTimeLocal = (date) => {
@@ -26,25 +28,45 @@ export default function BillingDashboard() {
   async function fetchCompletedOrders() {
     if (!startDate || !endDate) return;
     setLoading(true);
+    setLoadedCount(0);
 
     const startIso = new Date(startDate).toISOString();
     const endIso = new Date(endDate).toISOString();
 
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        id, created_at, status, store_id, driver_id,
-        stores ( name, delivery_fee ),
-        drivers ( full_name )
-      `)
-      .eq('status', 'completed')
-      .gte('created_at', startIso)
-      .lte('created_at', endIso);
+    // ⚠ ΣΕΛΙΔΟΠΟΙΗΣΗ — ΔΕΝ ΕΙΝΑΙ ΚΑΛΛΩΠΙΣΜΟΣ: το PostgREST κόβει σιωπηλά στις
+    // 1000 γραμμές. Με ~350 παραγγελίες/ημέρα, κάθε τιμολόγηση πάνω από 3
+    // ημέρες ΥΠΟΧΡΕΩΝΕ τα ποσά — ένας μήνας έδειχνε 1.000 αντί για ~10.500
+    // παραγγελίες, δηλαδή λάθος οφειλές καταστημάτων και λάθος πληρωμές
+    // διανομέων, χωρίς κανένα σφάλμα στην οθόνη.
+    //
+    // Το `.order('id')` είναι απαραίτητο: χωρίς σταθερή σειρά, οι σελίδες
+    // μπορούν να επιστρέψουν διπλές ή να χάσουν γραμμές (= πάλι λάθος ποσά).
+    const buildQuery = () =>
+      supabase
+        .from('orders')
+        .select(`
+          id, created_at, status, store_id, driver_id,
+          stores ( name, delivery_fee ),
+          drivers ( full_name )
+        `)
+        .eq('status', 'completed')
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+        .order('id', { ascending: false });
+
+    const { data, error, truncated } = await fetchAllRows(buildQuery, {
+      onProgress: setLoadedCount,
+    });
 
     if (data) {
       setOrders(data);
-      if (data.length > 0) {
-        toast.success(`Βρέθηκαν ${data.length} παραγγελίες!`);
+      if (truncated) {
+        toast.warning(
+          `Το διάστημα είναι τεράστιο: τα ποσά αφορούν τις ${HARD_CAP.toLocaleString('el-GR')} πιο πρόσφατες παραγγελίες. Στενέψτε τις ημερομηνίες.`,
+          { duration: 8000 }
+        );
+      } else if (data.length > 0) {
+        toast.success(`Βρέθηκαν ${data.length.toLocaleString('el-GR')} παραγγελίες!`);
       } else {
         toast.info("Δεν βρέθηκαν παραγγελίες για αυτό το διάστημα.");
       }
@@ -168,6 +190,11 @@ export default function BillingDashboard() {
 
       {loading ? (
         <div className="space-y-6">
+          {loadedCount > PAGE_SIZE && (
+            <div className="text-center text-sm text-[#C5A066] font-bold">
+              Ανάκτηση… {loadedCount.toLocaleString('el-GR')} παραγγελίες
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="h-32 skeleton"></div>
             <div className="h-32 skeleton"></div>

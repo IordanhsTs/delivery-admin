@@ -4,6 +4,10 @@ import { Search, MapPin, User, Building, Calendar, Inbox, RefreshCcw, Route } fr
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { formatKm, formatEuro, orderDurations } from './distance';
+import { fetchAllRows, PAGE_SIZE, HARD_CAP } from './fetchAll';
+
+// Πόσα αποτελέσματα ζωγραφίζουμε με τη μία (τα υπόλοιπα με «φόρτωση περισσότερων»).
+const RESULTS_PAGE = 200;
 
 // ── Αναζήτηση παραγγελιών ────────────────────────────────────────────────────
 // Ξεχωριστή καρτέλα από τα «Στατιστικά» επίτηδες (αίτημα πελάτη):
@@ -35,6 +39,8 @@ export default function OrderSearch() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [visibleRows, setVisibleRows] = useState(RESULTS_PAGE);
 
   const [keyword, setKeyword] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
@@ -64,18 +70,34 @@ export default function OrderSearch() {
   const runSearch = async () => {
     if (!startDate || !endDate) return;
     setLoading(true);
+    setLoadedCount(0);
+    setVisibleRows(RESULTS_PAGE);
 
-    let query = supabase
-      .from('orders')
-      .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, comments, stores ( name ), drivers ( full_name )')
-      .gte('created_at', new Date(startDate).toISOString())
-      .lte('created_at', new Date(endDate).toISOString())
-      .order('created_at', { ascending: false })
-      .limit(500);
+    // ⚠ ΓΙΑΤΙ ΣΕΛΙΔΟΠΟΙΗΣΗ ΚΑΙ ΟΧΙ `.limit(500)` ΟΠΩΣ ΠΡΙΝ: το φιλτράρισμα με
+    // λέξη-κλειδί γίνεται ΕΔΩ, στον browser (βλ. σχόλιο πιο κάτω). Με όριο 500
+    // γραμμές — δηλαδή ~1,5 ημέρα στον σημερινό ρυθμό — η αναζήτηση έψαχνε μόνο
+    // στις πιο πρόσφατες και απαντούσε «δεν βρέθηκαν παραγγελίες» για ό,τι ήταν
+    // πιο πίσω, ΧΩΡΙΣ να πει ότι κοίταξε μόνο ένα κομμάτι. Πλέον διαβάζει όλο το
+    // επιλεγμένο διάστημα· το εύρος ημερομηνιών είναι ο έλεγχος του χρήστη.
+    //
+    // Το `.order('id')` κρατάει σταθερή σειρά ανάμεσα στις σελίδες.
+    const buildQuery = () => {
+      let q = supabase
+        .from('orders')
+        .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, comments, stores ( name ), drivers ( full_name )')
+        .gte('created_at', new Date(startDate).toISOString())
+        .lte('created_at', new Date(endDate).toISOString())
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
 
-    if (selectedDriver) query = query.eq('driver_id', selectedDriver);
+      if (selectedDriver) q = q.eq('driver_id', selectedDriver);
+      return q;
+    };
 
-    const { data, error } = await query;
+    const { data, error, truncated } = await fetchAllRows(buildQuery, {
+      onProgress: setLoadedCount,
+    });
+
     setLoading(false);
     setSearched(true);
 
@@ -83,6 +105,13 @@ export default function OrderSearch() {
       console.error(error);
       toast.error('Σφάλμα κατά την αναζήτηση.');
       return;
+    }
+
+    if (truncated) {
+      toast.warning(
+        `Το διάστημα είναι τεράστιο: ψάξαμε στις ${HARD_CAP.toLocaleString('el-GR')} πιο πρόσφατες παραγγελίες. Στενέψτε τις ημερομηνίες.`,
+        { duration: 8000 }
+      );
     }
 
     // Το φιλτράρισμα λέξης-κλειδιού γίνεται εδώ και όχι στη βάση: ψάχνουμε ΚΑΙ στο
@@ -100,7 +129,7 @@ export default function OrderSearch() {
 
     setOrders(filtered);
     if (filtered.length === 0) toast.info('Δεν βρέθηκαν παραγγελίες με αυτά τα κριτήρια.');
-    else toast.success(`Βρέθηκαν ${filtered.length} παραγγελίες.`);
+    else toast.success(`Βρέθηκαν ${filtered.length.toLocaleString('el-GR')} παραγγελίες.`);
   };
 
   const inputClass = 'w-full p-2.5 rounded-xl outline-none transition-colors text-sm';
@@ -109,6 +138,10 @@ export default function OrderSearch() {
     border: '1px solid var(--border-default)',
     color: 'var(--text-primary)',
   };
+
+  // Κόβουμε ΜΟΝΟ ό,τι ζωγραφίζεται· το «Βρέθηκαν Χ» μετράει πάντα όλα.
+  const visibleOrders = orders.slice(0, visibleRows);
+  const hasMoreRows = orders.length > visibleRows;
 
   const formatStamp = (iso) =>
     iso ? new Date(iso).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -178,11 +211,21 @@ export default function OrderSearch() {
       {/* Αποτελέσματα */}
       {loading ? (
         <div className="space-y-3">
+          {loadedCount > PAGE_SIZE && (
+            <div className="text-center text-sm font-bold" style={{ color: 'var(--accent)' }}>
+              Αναζήτηση… {loadedCount.toLocaleString('el-GR')} παραγγελίες
+            </div>
+          )}
           {[1, 2, 3].map(i => <div key={i} className="h-20 skeleton rounded-xl" />)}
         </div>
       ) : orders.length > 0 ? (
         <div className="space-y-2">
-          {orders.map((order, idx) => {
+          {hasMoreRows && (
+            <p className="m-0 pb-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+              Εμφανίζονται {visibleOrders.length.toLocaleString('el-GR')} από {orders.length.toLocaleString('el-GR')} αποτελέσματα.
+            </p>
+          )}
+          {visibleOrders.map((order, idx) => {
             const { activeMins, acceptedMins, totalMins } = orderDurations(order);
             const st = STATUS_STYLE[order.status] || STATUS_STYLE.pending;
             return (
@@ -238,6 +281,25 @@ export default function OrderSearch() {
               </div>
             );
           })}
+          {hasMoreRows && (
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => setVisibleRows(v => v + RESULTS_PAGE * 5)}
+                className="py-2.5 px-5 rounded-xl cursor-pointer font-bold transition-all text-sm"
+                style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--accent)', border: '1px solid var(--border-default)' }}
+              >
+                Φόρτωση άλλων {Math.min(RESULTS_PAGE * 5, orders.length - visibleRows).toLocaleString('el-GR')}
+              </button>
+              <button
+                onClick={() => setVisibleRows(orders.length)}
+                className="underline underline-offset-4 text-xs cursor-pointer bg-transparent border-0"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Εμφάνιση όλων ({orders.length.toLocaleString('el-GR')})
+                {orders.length > 2000 && ' — θα αργήσει'}
+              </button>
+            </div>
+          )}
         </div>
       ) : searched ? (
         <div

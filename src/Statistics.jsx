@@ -5,12 +5,24 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { formatKm, orderDurations } from './distance';
+import { fetchAllRows, PAGE_SIZE, HARD_CAP } from './fetchAll';
+
+// Πόσες γραμμές του αναλυτικού ιστορικού δείχνουμε με το πάτημα, και πόσες
+// προσθέτει κάθε «φόρτωση περισσότερων».
+const HISTORY_PAGE = 200;
 import { STORE_CATEGORIES } from './storeCategories';
 
 export default function Statistics() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false); // Νέο state για το ιστορικό
+  // Πόσες γραμμές έχουν κατέβει μέχρι στιγμής — σε μεγάλα διαστήματα η ανάκτηση
+  // κρατάει δευτερόλεπτα και ο διαχειριστής πρέπει να βλέπει ότι κάτι γίνεται.
+  const [loadedCount, setLoadedCount] = useState(0);
+  // Πόσες γραμμές ΖΩΓΡΑΦΙΖΟΥΜΕ στο αναλυτικό ιστορικό. Τα KPI χρειάζονται όλες
+  // τις παραγγελίες, ο πίνακας όχι: 10.000 γραμμές × (πίνακας + λίστα κινητού,
+  // και τα δύο στο DOM) κολλάνε τον browser για αρκετά δευτερόλεπτα.
+  const [visibleRows, setVisibleRows] = useState(HISTORY_PAGE);
   
   // Λίστες για τα Dropdowns των Φίλτρων
   const [storesList, setStoresList] = useState([]);
@@ -58,8 +70,10 @@ export default function Statistics() {
   const fetchStats = async () => {
     if (!startDate || !endDate) return;
     setLoading(true);
+    setLoadedCount(0);
+    setVisibleRows(HISTORY_PAGE);
     setShowHistory(false); // Κρύβουμε το ιστορικό σε κάθε νέα αναζήτηση
-    
+
     const startIso = new Date(startDate).toISOString();
     const endIso = new Date(endDate).toISOString();
 
@@ -67,24 +81,41 @@ export default function Statistics() {
     // stores!inner (αντί για stores ( )): client feedback 08/08 — τρίτο φίλτρο
     // «είδος καταστήματος». Το PostgREST φιλτράρει σε embedded στήλη (stores.category)
     // μόνο με inner join· ακίνδυνο αφού κάθε παραγγελία έχει πάντα κατάστημα.
-    let query = supabase
-      .from('orders')
-      .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores!inner ( name, category ), drivers ( full_name )')
-      .eq('status', 'completed')
-      .gte('created_at', startIso)
-      .lte('created_at', endIso)
-      .order('completed_at', { ascending: false }); // Τα πιο πρόσφατα πρώτα
+    //
+    // ΣΥΝΑΡΤΗΣΗ και όχι έτοιμο query: το fetchAllRows το ξαναχτίζει για κάθε
+    // σελίδα των 1000. Το δεύτερο `.order('id')` ΔΕΝ είναι διακοσμητικό — είναι
+    // ο σταθερός διαχωριστής που κρατάει τη σειρά ίδια ανάμεσα στις σελίδες
+    // (δύο παραγγελίες μπορούν να έχουν το ίδιο completed_at).
+    const buildQuery = () => {
+      let q = supabase
+        .from('orders')
+        .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores!inner ( name, category ), drivers ( full_name )')
+        .eq('status', 'completed')
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+        .order('completed_at', { ascending: false }) // Τα πιο πρόσφατα πρώτα
+        .order('id', { ascending: false });
 
-    if (selectedStore) query = query.eq('store_id', selectedStore);
-    if (selectedDriver) query = query.eq('driver_id', selectedDriver);
-    if (selectedCategory) query = query.eq('stores.category', selectedCategory);
+      if (selectedStore) q = q.eq('store_id', selectedStore);
+      if (selectedDriver) q = q.eq('driver_id', selectedDriver);
+      if (selectedCategory) q = q.eq('stores.category', selectedCategory);
+      return q;
+    };
 
-    const { data, error } = await query;
+    const { data, error, truncated } = await fetchAllRows(buildQuery, {
+      onProgress: setLoadedCount,
+    });
 
     if (data) {
       setOrders(data);
-      if (data.length > 0) {
-        toast.success(`Ανακτήθηκαν ${data.length} παραγγελίες!`);
+      if (truncated) {
+        // Δεν σιωπούμε ποτέ σε κόψιμο — αυτό ακριβώς ήταν το παλιό πρόβλημα.
+        toast.warning(
+          `Το διάστημα είναι τεράστιο: δείχνουμε τις ${HARD_CAP.toLocaleString('el-GR')} πιο πρόσφατες παραγγελίες. Στενέψτε τις ημερομηνίες για ακριβή νούμερα.`,
+          { duration: 8000 }
+        );
+      } else if (data.length > 0) {
+        toast.success(`Ανακτήθηκαν ${data.length.toLocaleString('el-GR')} παραγγελίες!`);
       } else {
         toast.info("Δεν βρέθηκαν αποτελέσματα με αυτά τα φίλτρα.");
       }
@@ -131,6 +162,10 @@ export default function Statistics() {
   };
 
   const kpis = calculateKPIs();
+
+  // Τα KPI υπολογίζονται πάντα σε ΟΛΕΣ τις παραγγελίες· μόνο ο πίνακας κόβεται.
+  const historyRows = orders.slice(0, visibleRows);
+  const hasMoreRows = orders.length > visibleRows;
 
   // Δεδομένα για γράφημα (Top 5 καταστήματα)
   const chartData = kpis.sortedStores.slice(0, 5).map(([name, count]) => ({
@@ -242,6 +277,13 @@ export default function Statistics() {
 
       {loading ? (
         <div className="space-y-6">
+          {/* Σε μεγάλα διαστήματα η ανάκτηση γίνεται σε σελίδες των 1000 και
+              κρατάει δευτερόλεπτα· χωρίς μετρητή μοιάζει με κόλλημα. */}
+          {loadedCount > PAGE_SIZE && (
+            <div className="text-center text-sm text-[#C5A066] font-bold">
+              Ανάκτηση… {loadedCount.toLocaleString('el-GR')} παραγγελίες
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="h-32 skeleton"></div>
             <div className="h-32 skeleton"></div>
@@ -361,7 +403,14 @@ export default function Statistics() {
           {showHistory && (
             <div className="animate-fade-in card-glass backdrop-blur-md rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)] overflow-hidden mt-2">
               <div className="table-header-glass border-b border-[#C5A066]/40 p-4">
-                <h4 className="m-0 text-[#C5A066] font-bold drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">Αναλυτικές Παραγγελίες ({orders.length})</h4>
+                <h4 className="m-0 text-[#C5A066] font-bold drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">
+                  Αναλυτικές Παραγγελίες ({orders.length.toLocaleString('el-GR')})
+                </h4>
+                {hasMoreRows && (
+                  <p className="m-0 mt-1 text-adaptive text-xs">
+                    Εμφανίζονται οι {historyRows.length.toLocaleString('el-GR')} πιο πρόσφατες — τα στατιστικά από πάνω μετρούν και τις {orders.length.toLocaleString('el-GR')}.
+                  </p>
+                )}
               </div>
               
               {/* Desktop Table (Hidden on mobile) */}
@@ -376,7 +425,7 @@ export default function Statistics() {
                     </tr>
                   </thead>
                   <tbody className="text-sm divide-y divide-[#C5A066]/10">
-                    {orders.map(order => {
+                    {historyRows.map(order => {
                       // Ο πελάτης θέλει και τα δύο σκέλη ώστε να φαίνεται πού πήγε ο
                       // χρόνος: αναμονή για διανομέα vs. αυτή καθαυτή η διανομή.
                       const { activeMins, acceptedMins, totalMins } = orderDurations(order);
@@ -417,7 +466,7 @@ export default function Statistics() {
 
               {/* Mobile List (Hidden on desktop) */}
               <div className="md:hidden flex flex-col divide-y divide-[#C5A066]/10">
-                {orders.map(order => {
+                {historyRows.map(order => {
                   const { activeMins, acceptedMins, totalMins } = orderDurations(order);
                   const mins = order.completed_at ? totalMins : '-';
 
@@ -446,6 +495,30 @@ export default function Statistics() {
                   );
                 })}
               </div>
+
+              {/* Φόρτωση περισσότερων: ο πίνακας μεγαλώνει με το πάτημα, ώστε ένας
+                  μήνας (~10.000 παραγγελίες) να μην παγώνει την καρτέλα. */}
+              {hasMoreRows && (
+                <div className="p-4 border-t border-[#C5A066]/20 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button
+                    onClick={() => setVisibleRows(v => v + HISTORY_PAGE * 5)}
+                    className="btn-glass border border-[#C5A066]/50 hover:border-[#C5A066] text-[#C5A066] font-bold py-2.5 px-5 rounded-xl cursor-pointer transition-all text-sm"
+                  >
+                    Φόρτωση άλλων {Math.min(HISTORY_PAGE * 5, orders.length - visibleRows).toLocaleString('el-GR')}
+                  </button>
+                  <button
+                    onClick={() => setVisibleRows(orders.length)}
+                    className="text-adaptive hover:text-[#C5A066] underline underline-offset-4 text-xs cursor-pointer bg-transparent border-0"
+                  >
+                    {/* Μετρημένο σε preview: ~4.700 γραμμές = ~6,5" πάγωμα της
+                        καρτέλας (ο πίνακας ΚΑΙ η λίστα κινητού ζωγραφίζονται και
+                        οι δύο). Το λέμε ΠΡΙΝ το πατήσει, όχι σε tooltip που στο
+                        κινητό δεν φαίνεται καν. */}
+                    Εμφάνιση όλων ({orders.length.toLocaleString('el-GR')})
+                    {orders.length > 2000 && ' — θα αργήσει'}
+                  </button>
+                </div>
+              )}
 
             </div>
           )}
