@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { APIProvider, Map, useMap, ControlPosition } from '@vis.gl/react-google-maps';
 import { supabase, getTenantSchema } from './supabaseClient';
+import { liveChannel, skipFirst, forceWake } from './live';
 import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
 import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
@@ -766,7 +767,10 @@ export default function LiveMap({ navHidden = false }) {
   // φόρτου όσο τρέχει, κάτι που θα τρεμόπαιζε κάθε λίγα λεπτά χωρίς λόγο — τα
   // ιστορικά στοιχεία φόρτου δεν χρειάζονται τέτοια συχνότητα ούτως ή άλλως.
   const refreshAll = async ({ silent = false } = {}) => {
-    setRefreshing(true);
+    // Στο silent δεν αγγίζουμε το refreshing: τρέχει μόνο του κάθε λεπτό και σε
+    // κάθε επανασύνδεση καναλιού — ένα spinner που αναβοσβήνει από μόνο του θα
+    // τραβούσε το μάτι χωρίς να λέει τίποτα.
+    if (!silent) setRefreshing(true);
     try {
       await Promise.all([
         fetchDrivers(),
@@ -776,7 +780,7 @@ export default function LiveMap({ navHidden = false }) {
       ]);
       if (!silent) toast.success('Τα δεδομένα ανανεώθηκαν.');
     } finally {
-      setRefreshing(false);
+      if (!silent) setRefreshing(false);
     }
   };
 
@@ -790,11 +794,19 @@ export default function LiveMap({ navHidden = false }) {
     releaseDueOrders();
     const releaseTimer = setInterval(releaseDueOrders, 15000);
 
-    // 5λεπτο fallback πάνω από το realtime — βλ. σχόλιο στο refreshAll παραπάνω.
-    const autoRefreshTimer = setInterval(() => refreshAll({ silent: true }), 5 * 60 * 1000);
+    // Λεπτιάτικο fallback πάνω από το realtime — βλ. σχόλιο στο refreshAll παραπάνω.
+    // Ήταν 5λεπτο· κατέβηκε στο 1' μαζί με το live.js, γιατί αυτό είναι η ΤΕΛΕΥΤΑΙΑ
+    // γραμμή άμυνας για την περίπτωση που το websocket φαίνεται ζωντανό αλλά δεν
+    // παραδίδει τίποτα (κοιμισμένο λάπτοπ, ζόμπι σύνδεση) — εκεί ο διαχειριστής
+    // κοιτούσε παγωμένο χάρτη επί λεπτά.
+    const autoRefreshTimer = setInterval(() => refreshAll({ silent: true }), 60 * 1000);
 
-    const driversChannel = supabase
-      .channel('public:drivers_map_tracking')
+    const stopDriversChannel = liveChannel({
+      name: 'drivers_map_tracking',
+      // Σε κάθε επανασύνδεση: τα στίγματα που έχασε το κανάλι δεν ξανάρχονται ποτέ,
+      // οπότε ξαναδιαβάζουμε ολόκληρο τον στόλο.
+      onResync: skipFirst(fetchDrivers),
+      bind: (channel) => channel
       .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
         setLastUpdate(new Date());
         if (payload.eventType === 'DELETE') {
@@ -838,10 +850,15 @@ export default function LiveMap({ navHidden = false }) {
             return prevDrivers.filter(d => d.id !== updatedDriver.id);
           }
         });
-      }).subscribe();
+      }),
+    });
 
-    const ordersChannel = supabase
-      .channel('public:orders_map_flow')
+    const stopOrdersChannel = liveChannel({
+      name: 'orders_map_flow',
+      // Ό,τι έγινε όσο το κανάλι ήταν πεσμένο (νέες παραγγελίες, αναθέσεις,
+      // ολοκληρώσεις) δεν έρχεται ως event — μόνο με πλήρες ξαναδιάβασμα.
+      onResync: skipFirst(() => refreshAll({ silent: true })),
+      bind: (channel) => channel
       .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'orders' }, (payload) => {
         fetchActiveOrders();
         fetchLastCompletedTimes();
@@ -871,13 +888,14 @@ export default function LiveMap({ navHidden = false }) {
           toast.info("Προγραμματισμένη παραγγελία μόλις στάλθηκε!");
           fetchWorkloadStats();
         }
-      }).subscribe();
+      }),
+    });
 
     return () => {
       clearInterval(releaseTimer);
       clearInterval(autoRefreshTimer);
-      supabase.removeChannel(driversChannel);
-      supabase.removeChannel(ordersChannel);
+      stopDriversChannel();
+      stopOrdersChannel();
     };
   }, []);
 
@@ -1664,13 +1682,15 @@ export default function LiveMap({ navHidden = false }) {
             </div>
           )}
 
-          {/* Χειροκίνητη ανανέωση — ίδια δεδομένα με το αυτόματο 5λεπτο refresh
+          {/* Χειροκίνητη ανανέωση — ίδια δεδομένα με το αυτόματο λεπτιάτικο refresh
               (βλ. refreshAll), απλά με κλικ. Κάτω δεξιά μέσα σε αυτό το πλαίσιο,
-              όχι reload σελίδας: δεν αγγίζει τον χάρτη/Google Maps API. */}
+              όχι reload σελίδας: δεν αγγίζει τον χάρτη/Google Maps API.
+              Το forceWake() ξυπνά ΚΑΙ τα realtime κανάλια: όποιος πατά «ανανέωση»
+              συνήθως το κάνει ακριβώς επειδή κάτι έχει κολλήσει. */}
           <div className="absolute bottom-2.5 right-3">
             <button
               type="button"
-              onClick={() => refreshAll()}
+              onClick={() => { forceWake(); refreshAll(); }}
               disabled={refreshing}
               title="Χειροκίνητη ανανέωση δεδομένων (διανομείς, παραγγελίες)"
               className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"

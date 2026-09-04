@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
+import { liveChannel } from './live';
 import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { Megaphone, Send, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,7 +31,10 @@ export default function Messages() {
   const [stores, setStores] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [broadcastChannel, setBroadcastChannel] = useState(null);
+  // Το κανάλι εκπομπής ζει σε ref, όχι σε state: το liveChannel το ΞΑΝΑΧΤΙΖΕΙ όταν
+  // πέσει (καρτέλα admin ανοιχτή όλη μέρα), οπότε μια παγωμένη αναφορά θα έστελνε
+  // τα μηνύματα σε νεκρό κανάλι.
+  const broadcastRef = useRef(null);
   // Το `disabled={loading}` στο κουμπί δεν προλαβαίνει ένα γρήγορο διπλό κλικ πριν
   // ξαναγίνει render — δύο ταυτόχρονες κλήσεις functions.invoke() με το ίδιο token
   // υπό ανανέωση μπορεί η μία να πετύχει (φτάνει το push) και η άλλη να πέσει σε 401,
@@ -49,15 +53,21 @@ export default function Messages() {
     }
     fetchEntities();
 
-    // Προετοιμασία του καναλιού για αποστολή μηνυμάτων (πρέπει να είμαστε subscribed για να κάνουμε broadcast)
-    const channel = supabase.channel('system_alerts');
-    channel.subscribe((status) => {
-      console.log('Broadcast channel status:', status);
+    // Προετοιμασία του καναλιού για αποστολή μηνυμάτων (πρέπει να είμαστε subscribed
+    // για να κάνουμε broadcast). ΠΡΟΣΟΧΗ: unique:false — σε broadcast το όνομα ΕΙΝΑΙ
+    // η διεύθυνση και πρέπει να ταιριάζει με αυτό που ακούν καταστήματα/διανομείς.
+    const stop = liveChannel({
+      name: 'system_alerts',
+      unique: false,
+      bind: (channel) => {
+        broadcastRef.current = channel;
+        return channel;
+      },
     });
-    setBroadcastChannel(channel);
 
     return () => {
-      supabase.removeChannel(channel);
+      stop();
+      broadcastRef.current = null;
     };
   }, []);
 
@@ -68,7 +78,7 @@ export default function Messages() {
       toast.error('Παρακαλώ πληκτρολογήστε ένα μήνυμα.');
       return;
     }
-    if (!broadcastChannel) {
+    if (!broadcastRef.current) {
       toast.error('Αποτυχία σύνδεσης στο σύστημα μηνυμάτων. Ανανεώστε τη σελίδα.');
       return;
     }
@@ -85,7 +95,7 @@ export default function Messages() {
       };
 
       // Η αποστολή γίνεται μέσω του ήδη συνδεδεμένου καναλιού
-      const response = await broadcastChannel.send({
+      const response = await broadcastRef.current.send({
         type: 'broadcast',
         event: 'admin_message',
         payload: payload

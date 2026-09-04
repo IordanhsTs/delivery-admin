@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, getTenantSchema } from './supabaseClient';
+import { liveChannel, skipFirst } from './live';
 
 // ── Τρέχον υπόλοιπο ταμείου (POS cash-out) ──────────────────────────────────
 // Ίδιο μοτίβο με useStoreMessages: fetch μέσω RPC + realtime subscribe ώστε το
@@ -18,15 +19,17 @@ export function useCashFloat() {
   useEffect(() => {
     fetchOverview();
 
-    // Μοναδικό όνομα ανά instance — ίδιος λόγος με useStoreMessages: το hook
-    // μπορεί να ζει ταυτόχρονα στο badge του μενού ΚΑΙ στην καρτέλα «Ταμείο».
-    const channel = supabase
-      .channel(`cash_float_${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'cash_declarations' }, () => fetchOverview())
-      .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'cash_float_topups' }, () => fetchOverview())
-      .subscribe();
+    // Το liveChannel δίνει ήδη μοναδικό όνομα ανά instance — το χρειαζόμαστε γιατί
+    // το hook μπορεί να ζει ταυτόχρονα στο badge του μενού ΚΑΙ στην καρτέλα «Ταμείο».
+    const stop = liveChannel({
+      name: 'cash_float',
+      onResync: skipFirst(fetchOverview),
+      bind: (channel) => channel
+        .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'cash_declarations' }, () => fetchOverview())
+        .on('postgres_changes', { event: '*', schema: getTenantSchema(), table: 'cash_float_topups' }, () => fetchOverview()),
+    });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { stop(); };
   }, [fetchOverview]);
 
   return {

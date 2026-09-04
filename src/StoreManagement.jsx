@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, getTenantSchema } from './supabaseClient';
+import { liveChannel, skipFirst } from './live';
 import {
   Building2, Bike, X, Plus, Save, Phone, Mail, Edit2, LogOut, MapPin,
   AlertTriangle, Ban, ShieldCheck, RefreshCcw, Lock, KeyRound,
@@ -189,15 +190,18 @@ export default function StoreManagement() {
   // ενέργεια του διαχειριστή — χωρίς realtime η λίστα θα έμενε παγωμένη.
   useEffect(() => {
     if (activeTab !== 'couriers') return;
-    const channel = supabase
-      .channel('admin:couriers_presence')
-      .on('postgres_changes', { event: 'UPDATE', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
-        if (!payload.new) return;
-        setCouriers(prev => prev.map(c => (c.id === payload.new.id ? { ...c, ...payload.new } : c)));
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [activeTab]);
+    const stop = liveChannel({
+      name: 'admin_couriers_presence',
+      // Όσο το κανάλι ήταν πεσμένο η παρουσία άλλαξε χωρίς να το μάθουμε.
+      onResync: skipFirst(fetchCouriers),
+      bind: (channel) => channel
+        .on('postgres_changes', { event: 'UPDATE', schema: getTenantSchema(), table: 'drivers' }, (payload) => {
+          if (!payload.new) return;
+          setCouriers(prev => prev.map(c => (c.id === payload.new.id ? { ...c, ...payload.new } : c)));
+        }),
+    });
+    return () => { stop(); };
+  }, [activeTab, fetchCouriers]);
 
   const refresh = () => (activeTab === 'stores' ? fetchStores() : fetchCouriers());
   const busy = activeTab === 'stores' ? loading.stores : loading.couriers;

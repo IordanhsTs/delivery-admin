@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, getTenantSchema } from './supabaseClient';
+import { liveChannel, skipFirst } from './live';
 
 // ── Εισερχόμενα μηνύματα από τα καταστήματα ─────────────────────────────────
 // Τα μηνύματα admin→κατάστημα/διανομέα ταξιδεύουν με realtime broadcast (εφήμερα).
@@ -26,19 +27,21 @@ export function useStoreMessages() {
   useEffect(() => {
     fetchMessages();
 
-    // Μοναδικό όνομα ανά instance: το hook χρησιμοποιείται σε δύο σημεία ταυτόχρονα
-    // (badge στο μενού + λίστα εισερχομένων) και δύο κανάλια με το ίδιο όνομα
-    // συγκρούονται στον supabase client.
-    const channel = supabase
-      .channel(`store_messages_inbox_${Math.random().toString(36).slice(2)}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: getTenantSchema(), table: 'store_messages' },
-        () => fetchMessages()
-      )
-      .subscribe();
+    // Το liveChannel δίνει ήδη μοναδικό όνομα ανά instance: το hook χρησιμοποιείται
+    // σε δύο σημεία ταυτόχρονα (badge στο μενού + λίστα εισερχομένων) και δύο κανάλια
+    // με το ίδιο όνομα συγκρούονται στον supabase client.
+    const stop = liveChannel({
+      name: 'store_messages_inbox',
+      onResync: skipFirst(fetchMessages),
+      bind: (channel) => channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: getTenantSchema(), table: 'store_messages' },
+          () => fetchMessages()
+        ),
+    });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { stop(); };
   }, [fetchMessages]);
 
   const unreadCount = messages.filter(m => !m.read_at).length;
