@@ -8,7 +8,10 @@ import path from 'node:path'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: [{ find: /^\.\/supabaseClient$/, replacement: path.resolve('./preview/mockSupabase.js') }],
+    alias: [
+      { find: /^\.\/supabaseClient$/, replacement: path.resolve('./preview/mockSupabase.js') },
+      { find: /^\.\/live$/, replacement: path.resolve('./preview/mockLive.js') },
+    ],
   },
   server: { port: 5199 },
 })

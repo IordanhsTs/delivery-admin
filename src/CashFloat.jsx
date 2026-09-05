@@ -47,6 +47,26 @@ const inputStyle = {
   backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-default)',
 };
 const accentBtn = { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))' };
+
+// ── Τα τρία είδη κίνησης στο ιστορικό ───────────────────────────────────────
+// Το «Δήλωση» σκέτο δεν έλεγε αν ήταν POS ή βενζίνη (και μέχρι το 0029 το RPC
+// επέστρεφε μόνο POS). ΚΑΙ ΤΑ ΔΥΟ είδη δήλωσης βγάζουν λεφτά από το φυσικό
+// ταμείο — ο διανομέας παίρνει από εκεί και για τη βενζίνη, αφήνοντας την
+// απόδειξη (βλ. 0030) — άρα και τα δύο παίρνουν «−».
+const LEDGER_KINDS = {
+  topup: {
+    label: 'Ανεφοδιασμός', Icon: PlusCircle, sign: '+', amountColor: 'var(--success)',
+    badge: { color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' },
+  },
+  cash: {
+    label: 'Δήλωση POS', Icon: Wallet, sign: '−', amountColor: 'var(--text-primary)',
+    badge: { color: 'var(--accent)', backgroundColor: 'var(--accent-muted)' },
+  },
+  fuel: {
+    label: 'Δήλωση βενζίνης', Icon: Fuel, sign: '−', amountColor: 'var(--text-primary)',
+    badge: { color: 'var(--warning)', backgroundColor: 'var(--warning-bg)', border: '1px solid var(--warning-border)' },
+  },
+};
 const subtleBtn = {
   backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)',
 };
@@ -197,7 +217,7 @@ export default function CashFloat() {
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Ταμείο</h1>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Δηλώσεις POS από το κιόσκ των διανομέων
+              Δηλώσεις POS και βενζίνης από το κιόσκ των διανομέων
             </p>
           </div>
         </div>
@@ -431,26 +451,22 @@ export default function CashFloat() {
                   Καμία κίνηση ταμείου αυτή την εβδομάδα.
                 </td></tr>
               )}
-              {!loading && rows.map((r) => (
+              {!loading && rows.map((r) => {
+                const kind = LEDGER_KINDS[r.kind] || LEDGER_KINDS.cash;
+                return (
                 <tr key={`${r.kind}-${r.id}`} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                   <td className="px-4 py-3">
-                    {r.kind === 'topup' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold" style={{ color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
-                        <PlusCircle size={12} /> Ανεφοδιασμός
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold" style={{ color: 'var(--accent)', backgroundColor: 'var(--accent-muted)' }}>
-                        <Wallet size={12} /> Δήλωση
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap" style={kind.badge}>
+                      <kind.Icon size={12} /> {kind.label}
+                    </span>
                   </td>
                   <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>
                     {r.driver_name ? (
                       <span className="flex items-center gap-1.5"><User size={13} style={{ color: 'var(--text-muted)' }} /> {r.driver_name}</span>
                     ) : '—'}
                   </td>
-                  <td className="px-4 py-3 font-bold" style={{ color: r.kind === 'topup' ? 'var(--success)' : 'var(--text-primary)' }}>
-                    {r.kind === 'topup' ? '+' : '−'}{eur(r.amount)} €
+                  <td className="px-4 py-3 font-bold" style={{ color: kind.amountColor }}>
+                    {kind.sign}{eur(r.amount)} €
                   </td>
                   <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{prettyDateTime(r.created_at)}</td>
                   <td className="px-4 py-3 truncate max-w-[220px]" style={{ color: 'var(--text-secondary)' }} title={r.note || ''}>
@@ -467,7 +483,8 @@ export default function CashFloat() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

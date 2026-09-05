@@ -4,11 +4,12 @@ import { Toaster } from 'sonner';
 import Statistics from '../src/Statistics.jsx';
 import OrderSearch from '../src/OrderSearch.jsx';
 import BillingDashboard from '../src/BillingDashboard.jsx';
+import CashFloat from '../src/CashFloat.jsx';
 import '../src/index.css';
 import '../src/App.css';
 
-// ?tab=search → OrderSearch · ?tab=billing → Εκκαθάριση · αλλιώς Statistics
-const TABS = { search: OrderSearch, billing: BillingDashboard };
+// ?tab=search → OrderSearch · ?tab=billing → Εκκαθάριση · ?tab=cash → Ταμείο · αλλιώς Statistics
+const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat };
 const Tab = TABS[new URLSearchParams(location.search).get('tab')] || Statistics;
 
 createRoot(document.getElementById('root')).render(
