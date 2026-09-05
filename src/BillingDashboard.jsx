@@ -90,9 +90,17 @@ export default function BillingDashboard() {
     orders.forEach(order => {
       const storeName = order.stores?.name || 'Άγνωστο Κατάστημα';
       const driverName = order.drivers?.full_name || 'Άγνωστος Οδηγός';
-      const storeRate = order.stores?.delivery_fee || 0; 
-      const companyShare = 0.50; 
-      const driverPayout = storeRate - companyShare; 
+      const storeRate = order.stores?.delivery_fee || 0;
+      // ΤΟ 0,50 ΗΤΑΝ ΛΑΘΟΣ ΥΠΟΔΙΑΣΤΟΛΗΣ (05/09/2026). Με delivery_fee 0,15/0,18 η
+      // «Πληρωμή Διανομέων» έβγαινε −0,35 και −0,32 €, δηλαδή αρνητικός μισθός.
+      // Το μερίδιο της εταιρείας είναι 5 λεπτά ανά παραγγελία, όχι 50:
+      //   καφέ   0,15 − 0,05 = 0,10 €
+      //   φαγητό 0,18 − 0,05 = 0,13 €   (ίδιο και για τα ψιλικά)
+      // Η ανάλυση παρακάτω ομαδοποιεί ανά ΤΙΜΗ, όχι ανά είδος: φαγητό και ψιλικά
+      // πέφτουν μόνα τους στην ίδια γραμμή («15 παρ. x 0.13 €»), ενώ ένα μελλοντικό
+      // κατάστημα με άλλη χρέωση (π.χ. 0,22 → 0,17 €) προσθέτει μόνο του τη δική του.
+      const companyShare = 0.05;
+      const driverPayout = storeRate - companyShare;
 
       totalStoreCharges += storeRate;
       totalDriverPayouts += driverPayout;
