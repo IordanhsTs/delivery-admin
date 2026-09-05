@@ -29,8 +29,15 @@ const STORAGE_KEY = 'vertex-auth';
 const ACTIVE_CACHE_KEY = 'vertex-active-backend';
 const TENANT_KEY = 'vertex-tenant';   // MULTI-TENANT: το schema της εταιρίας του χρήστη
 const CHECK_INTERVAL_MS = 30000;
-const FETCH_TIMEOUT_MS = 4000;
-const FAILURES_BEFORE_SWITCH = 2;
+// ΤΑ 4 ΔΕΥΤΕΡΟΛΕΠΤΑ ΗΤΑΝ ΛΙΓΑ (05/09/2026): σε κινητό με το ραδιόφωνο σε ύπνο ή
+// με αδύναμο σήμα, το πρώτο αίτημα μετά από αδράνεια αργεί κανονικά 3-6 δευτ.
+// Έτσι ένα υγιέστατο primary «έπεφτε» και η συσκευή γύριζε μόνη της στο εφεδρικό.
+const CONFIG_TIMEOUT_MS = 8000;
+const HEALTH_TIMEOUT_MS = 6000;
+const FAILURES_BEFORE_SWITCH = 3;
+// Οι browsers στραγγαλίζουν τα setInterval σε καρτέλα που δεν είναι μπροστά: δύο
+// «συνεχόμενες» αποτυχίες μπορεί να απέχουν ώρες. Ξεχνάμε ό,τι είναι παλιό.
+const FAILURE_MEMORY_MS = 5 * 60 * 1000;
 
 function savedIndex() {
   try {
@@ -103,9 +110,33 @@ export function getTenantSchema() {
 // Πλέον το standby έχει ΑΚΡΙΒΩΣ τα ίδια δικαιώματα με το primary και δέχεται τα
 // πάντα· η απόκλιση λύνεται με την αυτόματη επαναφορά standby→primary στις 02:00
 // (merge-to-primary.sh στον standby server), όχι με το να κλείνουμε τη δουλειά.
-// Η μετάβαση κάνει reload, οπότε η τιμή είναι σταθερή ανά φόρτωση.
+//
+// ΤΙ ΕΣΠΑΣΕ (05/09/2026): η μπάρα ζωγραφιζόταν κατευθείαν από το localStorage,
+// πριν προλάβει να ρωτήσει κανείς. Ένα κινητό που είχε γυρίσει λάθος στο standby
+// (βλ. tick() παρακάτω) έγραφε «εφεδρική λειτουργία» σε ΚΑΘΕ άνοιγμα, για μισό
+// λεπτό, μέχρι το πρώτο tick. Πλέον η κατάσταση ξεκινά 'unknown' και γίνεται
+// 'standby' μόνο όταν το επιβεβαιώσει ο κεντρικός τροχονόμος — ή, αν εκείνος δεν
+// απαντά, όταν το κύριο αποδεδειγμένα δεν αποκρίνεται.
+let backupState = 'unknown';        // 'unknown' | 'primary' | 'standby'
+const backupListeners = new Set();
+
+function setBackupState(next) {
+  if (next === backupState) return;
+  backupState = next;
+  backupListeners.forEach((fn) => { try { fn(next); } catch (_) {} });
+}
+
+export function getBackupState() {
+  return backupState;
+}
+
+export function subscribeBackupState(fn) {
+  backupListeners.add(fn);
+  return () => backupListeners.delete(fn);
+}
+
 export function isBackupMode() {
-  return active?.name === 'standby';
+  return backupState === 'standby';
 }
 
 function switchTo(index, reason) {
@@ -115,9 +146,9 @@ function switchTo(index, reason) {
   window.location.reload();
 }
 
-function fetchWithTimeout(url, options = {}) {
+function fetchWithTimeout(url, options = {}, timeoutMs = HEALTH_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() =>
     clearTimeout(timer)
   );
@@ -138,7 +169,7 @@ async function readRemoteConfig() {
   for (const base of CONFIG_URLS) {
     try {
       const sep = base.includes('?') ? '&' : '?';
-      const res = await fetchWithTimeout(`${base}${sep}t=${Date.now()}`);
+      const res = await fetchWithTimeout(`${base}${sep}t=${Date.now()}`, {}, CONFIG_TIMEOUT_MS);
       if (res.ok) {
         const cfg = await res.json();
         if (cfg && (cfg.active === 'primary' || cfg.active === 'standby')) {
@@ -151,31 +182,64 @@ async function readRemoteConfig() {
 }
 
 let consecutiveFailures = 0;
+let lastFailureAt = 0;
 
 async function tick() {
+  // 0) Αν η ΙΔΙΑ η συσκευή είναι εκτός δικτύου, δεν κρίνουμε κανένα backend:
+  //    κάθε αίτημα θα σκάσει και θα κατηγορούσαμε άδικα το κύριο.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
   // 1) Κεντρική εντολή (Cloudflare Worker) — όλοι οι clients συμφωνούν.
   const desired = await readRemoteConfig();
   if (desired) {
     const idx = desired === 'standby' ? 1 : 0;
-    if (idx !== activeIndex) switchTo(idx, 'κεντρική εντολή');
     consecutiveFailures = 0;
-    return;
-  }
-  // 2) Fallback: τοπικός έλεγχος υγείας.
-  if (await isHealthy(BACKENDS[activeIndex])) {
-    consecutiveFailures = 0;
-    return;
-  }
-  consecutiveFailures += 1;
-  if (consecutiveFailures >= FAILURES_BEFORE_SWITCH) {
-    const other = activeIndex === 0 ? 1 : 0;
-    if (BACKENDS[other] && (await isHealthy(BACKENDS[other]))) {
-      switchTo(other, 'το ενεργό backend δεν αποκρίνεται');
+    if (idx !== activeIndex) {
+      switchTo(idx, 'κεντρική εντολή');
+      return;
     }
+    setBackupState(desired);
+    return;
+  }
+
+  // 2) Ο τροχονόμος δεν απαντά. Ελέγχουμε ΚΑΙ ΤΑ ΔΥΟ backends ΤΑΥΤΟΧΡΟΝΑ.
+  //    Εδώ ήταν το βασικό λάθος: παλιότερα μετρούσαμε αποτυχίες του κύριου σε
+  //    άλλη στιγμή από τον έλεγχο του εφεδρικού. Ένα κινητό που ξυπνούσε με
+  //    νεκρό δίκτυο μάζευε 2 «αποτυχίες» και μετά — με το δίκτυο πια ζωντανό —
+  //    έβρισκε το εφεδρικό υγιές και γύριζε εκεί. Ψεύτικο failover.
+  const other = activeIndex === 0 ? 1 : 0;
+  const [activeOk, otherOk] = await Promise.all([
+    isHealthy(BACKENDS[activeIndex]),
+    BACKENDS[other] ? isHealthy(BACKENDS[other]) : Promise.resolve(false),
+  ]);
+
+  if (activeOk) {
+    consecutiveFailures = 0;
+    // Είμαστε στο εφεδρικό ΚΑΙ το κύριο όντως δεν αποκρίνεται → αληθινό failover.
+    if (activeIndex === 1 && !otherOk) setBackupState('standby');
+    return;
+  }
+
+  // Δεν αποκρίνεται ΚΑΝΕΝΑ από τα δύο → το πρόβλημα είναι το δικό μας δίκτυο.
+  if (!otherOk) {
+    consecutiveFailures = 0;
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastFailureAt > FAILURE_MEMORY_MS) consecutiveFailures = 0;
+  lastFailureAt = now;
+  consecutiveFailures += 1;
+
+  if (consecutiveFailures >= FAILURES_BEFORE_SWITCH) {
+    switchTo(other, 'το ενεργό backend δεν αποκρίνεται');
   }
 }
 
 if (BACKENDS.length > 1) {
+  // ΑΜΕΣΩΣ, όχι σε 30 δευτ.: χωρίς αυτό, μια αποθηκευμένη (και πιθανώς λάθος)
+  // επιλογή backend ίσχυε ανενόχλητη για μισό λεπτό σε κάθε φόρτωση.
+  tick();
   setInterval(tick, CHECK_INTERVAL_MS);
   window.addEventListener('online', tick);
   // Οι browsers περιορίζουν τα setInterval σε καρτέλες που δεν είναι ενεργές·
@@ -184,4 +248,6 @@ if (BACKENDS.length > 1) {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) tick();
   });
+} else {
+  setBackupState(active?.name === 'standby' ? 'standby' : 'primary');
 }

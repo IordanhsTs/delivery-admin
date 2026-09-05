@@ -1,12 +1,22 @@
-import { isBackupMode } from './supabaseClient';
+import { useEffect, useState } from 'react';
+import { getBackupState, subscribeBackupState } from './supabaseClient';
 
 // Ενημερωτική μπάρα όταν τρέχουμε στο εφεδρικό datacenter (standby).
 //
 // ΔΕΝ σημαίνει περιορισμό: το εφεδρικό δέχεται ΟΛΕΣ τις λειτουργίες, ακριβώς
 // όπως το κύριο. Η μπάρα υπάρχει για να ξέρει ο υπεύθυνος ότι το κύριο σύστημα
 // έχει πρόβλημα και ότι τα δεδομένα θα γυρίσουν πίσω σε αυτό στις 02:00.
+//
+// ΠΡΟΣΟΧΗ (05/09/2026): η μπάρα ΔΕΝ ζωγραφίζεται από την αποθηκευμένη επιλογή
+// backend. Παλιότερα το έκανε, και ένα κινητό με λάθος αποθηκευμένη τιμή έγραφε
+// «εφεδρική λειτουργία» για μισό λεπτό σε κάθε άνοιγμα — με το σύστημα μια χαρά.
+// Πλέον περιμένουμε επιβεβαίωση από τον κεντρικό τροχονόμο (getBackupState).
 export default function BackupModeBanner() {
-  if (!isBackupMode()) return null;
+  const [state, setState] = useState(getBackupState);
+
+  useEffect(() => subscribeBackupState(setState), []);
+
+  if (state !== 'standby') return null;
   return (
     <div
       role="status"
