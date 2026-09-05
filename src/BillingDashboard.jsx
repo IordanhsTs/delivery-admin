@@ -1,16 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import * as XLSX from 'xlsx';
 import { Receipt, Download, Wallet, Banknote, TrendingUp, Building, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList } from 'recharts';
 import { fetchAllRows, PAGE_SIZE, HARD_CAP } from './fetchAll';
 
 export default function BillingDashboard() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadedCount, setLoadedCount] = useState(0);
+  // Πίτα ή ράβδοι για τα καταστήματα. Προεπιλογή οι ράβδοι: με 36 καταστήματα η
+  // πίτα γίνεται αδιάβαστη — οι μισές ετικέτες πέφτουν η μία πάνω στην άλλη και
+  // πάνω από δέκα καταστήματα δείχνουν «0%».
+  const [storeChart, setStoreChart] = useState('bar');
+  // Σε κινητό ο άξονας με τα ονόματα έτρωγε 112 από τα 266 διαθέσιμα pixel και
+  // άφηνε 98 για την ίδια τη ράβδο. Στενεύουμε ονόματα και περιθώριο εκεί.
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e) => setNarrow(e.matches);
+    setNarrow(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Βοηθητική συνάρτηση για το format YYYY-MM-DDTHH:mm
   const formatDateTimeLocal = (date) => {
@@ -148,15 +164,52 @@ export default function BillingDashboard() {
     toast.success("Το Excel διανομέων κατέβηκε επιτυχώς!");
   };
 
-  const storeChartData = Object.keys(financials.storeBreakdown).map(store => ({
-    name: store,
-    value: financials.storeBreakdown[store].balance
-  }));
+  // ── Δεδομένα γραφημάτων ─────────────────────────────────────────────────
+  // Και τα δύο ήταν ΑΤΑΞΙΝΟΜΗΤΑ: η σειρά ήταν αυτή με την οποία πρωτοεμφανιζόταν
+  // ο καθένας στις παραγγελίες που κατέβηκαν — ούτε καν αλφαβητική.
+  const storeChartData = Object.keys(financials.storeBreakdown)
+    .map(store => ({ name: store, value: financials.storeBreakdown[store].balance }))
+    .sort((a, b) => b.value - a.value);              // μεγαλύτερη οφειλή πρώτη
 
-  const driverChartData = Object.keys(financials.driverBreakdown).map(driver => ({
-    name: driver,
-    value: financials.driverBreakdown[driver].totalBalance
-  }));
+  // Η πίτα κρατά τα 6 μεγαλύτερα και μαζεύει τα υπόλοιπα σε ένα κομμάτι, αλλιώς
+  // δεν διαβάζεται. Οι ράβδοι τα δείχνουν ούτως ή άλλως όλα.
+  const PIE_TOP = 6;
+  const storePieData = storeChartData.length > PIE_TOP + 1
+    ? [
+        ...storeChartData.slice(0, PIE_TOP),
+        {
+          name: 'Λοιπά (' + (storeChartData.length - PIE_TOP) + ')',
+          value: storeChartData.slice(PIE_TOP).reduce((sum, d) => sum + d.value, 0),
+        },
+      ]
+    : storeChartData;
+
+  // Αύξουσα σειρά αποδοχών (αίτημα πελάτη 05/09/2026).
+  const driverChartData = Object.keys(financials.driverBreakdown)
+    .map(driver => ({ name: driver, value: financials.driverBreakdown[driver].totalBalance }))
+    .sort((a, b) => a.value - b.value);
+
+  // Οριζόντιες ράβδοι: το ύψος μεγαλώνει με τις γραμμές ώστε να χωράει ΚΑΘΕ
+  // όνομα. Ο κάθετος άξονας πετούσε ονόματα διανομέων γιατί δεν χωρούσαν πλάγια.
+  const rowsHeight = (n) => Math.max(200, n * 34 + 20);
+  // 150px στη στήλη ονομάτων, όχι 112: με 112 ΚΑΘΕ ονοματεπώνυμο διανομέα έσπαγε
+  // σε δύο σειρές ΚΑΙ κοβόταν («Παναγιώτης / Κατσ…»), δηλαδή το επώνυμο χανόταν.
+  // Μένουν 408px για τη ράβδο σε desktop — υπεραρκετά.
+  const nameWidth = narrow ? 104 : 168;
+  const valueGutter = narrow ? 44 : 56;
+  const nameMax = narrow ? 12 : 22;
+  const shortName = (v) => (v.length > nameMax ? v.slice(0, nameMax - 1) + '…' : v);
+  // Σε κινητό δεν χωράει ολόκληρο ονοματεπώνυμο· «Παναγιώτης Κατσούτας» γίνεται
+  // «Παναγιώτης Κ.», που διαβάζεται — σε αντίθεση με ένα κομμένο επώνυμο.
+  const driverAxisName = (v) => {
+    if (!narrow) return shortName(v);
+    const parts = String(v).trim().split(/\s+/);
+    return parts.length > 1 ? `${shortName(parts[0])} ${parts[1][0]}.` : shortName(v);
+  };
+
+  const axisTick = { fontSize: 11, fill: '#A89C8E' };
+  const tooltipMoney = (value) => value.toFixed(2) + ' €';
+  const moneyLabel = (v) => Number(v).toFixed(2) + '€';
 
   return (
     <motion.div 
@@ -262,51 +315,115 @@ export default function BillingDashboard() {
           {/* Γραφήματα */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             <div className="card-glass backdrop-blur-md p-6 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-              <h4 className="text-center font-bold mb-4 text-[#38EF7D]">Οφειλές ανά Κατάστημα</h4>
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={storeChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h4 className="m-0 font-bold text-[#38EF7D]">Οφειλές ανά Κατάστημα</h4>
+                {/* Η πίτα μένει διαθέσιμη για μια γρήγορη εικόνα «ποιος κρατά το
+                    μεγαλύτερο κομμάτι», αλλά δεν είναι πια η προεπιλογή. */}
+                <div className="flex rounded-lg overflow-hidden border border-[#38EF7D]/40 shrink-0">
+                  {[
+                    { key: 'bar', label: 'Ράβδοι' },
+                    { key: 'pie', label: 'Πίτα' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setStoreChart(opt.key)}
+                      className={`px-3 py-1 text-xs font-bold transition-colors cursor-pointer ${
+                        storeChart === opt.key
+                          ? 'bg-[#38EF7D]/20 text-[#38EF7D]'
+                          : 'btn-glass text-adaptive hover:text-[#38EF7D]'
+                      }`}
                     >
-                      {storeChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip 
-                      formatter={(value) => `${value.toFixed(2)} €`}
-                      contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#C5A066', borderRadius: '8px' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {storeChart === 'bar' ? (
+                <div className="max-h-[420px] overflow-y-auto pr-1">
+                  <div style={{ height: rowsHeight(storeChartData.length) }} className="w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={storeChartData} layout="vertical" margin={{ left: 4, right: valueGutter, top: 4, bottom: 4 }}>
+                        <XAxis type="number" hide />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={nameWidth}
+                          interval={0}
+                          tick={axisTick}
+                          tickFormatter={shortName}
+                          stroke="#A89C8E"
+                        />
+                        <RechartsTooltip
+                          formatter={tooltipMoney}
+                          cursor={{ fill: 'rgba(56,239,125,0.08)' }}
+                          contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#38EF7D', borderRadius: '8px' }}
+                        />
+                        <Bar dataKey="value" fill="#38EF7D" radius={[0, 4, 4, 0]}>
+                          <LabelList dataKey="value" position="right" fontSize={11} fill="#38EF7D" formatter={moneyLabel} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={storePieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={85}
+                        fill="#8884d8"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {storePieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={tooltipMoney}
+                        contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#C5A066', borderRadius: '8px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             <div className="card-glass backdrop-blur-md p-6 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-              <h4 className="text-center font-bold mb-4 text-[#9D4EDD]">Αποδοχές ανά Διανομέα</h4>
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={driverChartData}>
-                    <XAxis dataKey="name" stroke="#A89C8E" tick={{fontSize: 12}} />
-                    <YAxis stroke="#A89C8E" />
-                    <RechartsTooltip 
-                      formatter={(value) => `${value.toFixed(2)} €`}
-                      contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#9D4EDD', borderRadius: '8px' }}
-                    />
-                    <Bar dataKey="value" fill="#9D4EDD" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <h4 className="font-bold mb-4 text-[#9D4EDD]">Αποδοχές ανά Διανομέα</h4>
+              <div className="max-h-[420px] overflow-y-auto pr-1">
+                <div style={{ height: rowsHeight(driverChartData.length) }} className="w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={driverChartData} layout="vertical" margin={{ left: 4, right: valueGutter, top: 4, bottom: 4 }}>
+                      <XAxis type="number" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={nameWidth}
+                        interval={0}
+                        tick={axisTick}
+                        tickFormatter={driverAxisName}
+                        stroke="#A89C8E"
+                      />
+                      <RechartsTooltip
+                        formatter={tooltipMoney}
+                        cursor={{ fill: 'rgba(157,78,221,0.10)' }}
+                        contentStyle={{ backgroundColor: '#1A1A1A', borderColor: '#9D4EDD', borderRadius: '8px' }}
+                      />
+                      <Bar dataKey="value" fill="#9D4EDD" radius={[0, 4, 4, 0]}>
+                        <LabelList dataKey="value" position="right" fontSize={11} fill="#9D4EDD" formatter={moneyLabel} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
           </div>
-
           {/* Αναλύσεις (Cards για Κινητά / Grids για Desktop) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
