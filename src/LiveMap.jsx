@@ -1952,11 +1952,25 @@ function WorkloadChart({ matrix, loading, isDark }) {
               const isLabelled = (h - START_HOUR) % 4 === 0;
               const isNow = selectedDay === todayDow && h === currentHour;
               const isPicked = pickedHour === h;
+              // ΓΕΙΤΟΝΑΣ ΤΗΣ ΕΠΙΛΕΓΜΕΝΗΣ ΣΩΠΑΙΝΕΙ (πελάτης 06/09/2026): μια ετικέτα
+              // «14:00» είναι στα 10px περίπου διπλάσια από τη στήλη της, οπότε
+              // ξεχειλίζει πάνω στις διπλανές. Όταν η επιλεγμένη ώρα έπεφτε δίπλα σε
+              // μόνιμη ετικέτα (07·11·15·19·23) ή στην τρέχουσα, τα δύο νούμερα
+              // γράφονταν το ένα πάνω στο άλλο και δεν διαβαζόταν κανένα.
+              //
+              // Προτεραιότητα έχει η επιλεγμένη — αυτήν μόλις ζήτησε ο διαχειριστής —
+              // και ο γείτονας κρύβεται όσο κρατά η επιλογή. Μόνο ±1 στήλη: στις 2
+              // στήλες απόσταση οι ετικέτες χωράνε ήδη άνετα, και το να έσβηναν κι
+              // αυτές θα άφηνε τον άξονα σχεδόν άδειο.
+              const nextToPicked = pickedHour !== null && !isPicked && Math.abs(h - pickedHour) === 1;
+              // Η τρέχουσα ώρα που χάνει έτσι την ετικέτα της δεν εξαφανίζεται:
+              // πέφτει πίσω στην πράσινη κουκκίδα (το `isNow` παρακάτω).
+              const showLabel = isPicked || (isLabelled && !nextToPicked);
               return (
                 <div key={h} className="flex-1 min-w-0 flex items-center justify-center h-3">
                   {/* Η επιλεγμένη ώρα παίρνει ετικέτα ακόμη κι αν δεν είναι
                       «κάθε 4η» — αλλιώς θα φαινόταν τονισμένη μπάρα χωρίς όνομα. */}
-                  {isLabelled || isPicked ? (
+                  {showLabel ? (
                     <span
                       className="text-[10px] font-semibold tabular-nums"
                       style={{
