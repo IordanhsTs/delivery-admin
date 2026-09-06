@@ -80,6 +80,14 @@ export default function Schedule() {
   const [submitted, setSubmitted] = useState({});         // driverId → updated_at
   const [draft, setDraft] = useState({});                 // driverId → { ymd: [slot] }
   const [publishedAt, setPublishedAt] = useState(null);
+  // Υπάρχει αποθηκευμένο προσχέδιο που ΔΕΝ έχει φτάσει ακόμη στα κινητά.
+  // Διαφορετικό από το `dirty`, που σημαίνει «αλλαγές στην οθόνη, ούτε καν
+  // αποθηκευμένες». Και τα δύο μαζί = «γράφει κάτι πάνω σε κάτι αδημοσίευτο».
+  const [hasDraft, setHasDraft] = useState(false);
+  // Η βάση δεν έχει ακόμη το migration 0032. Όσο ισχύει, η δημοσιευμένη
+  // εβδομάδα μένει κλειδωμένη όπως πριν — το παλιό apply_week_schedule γράφει
+  // κατευθείαν στη ζωντανή έκδοση και δεν υπάρχει προσχέδιο να προστατεύσει.
+  const [legacySchema, setLegacySchema] = useState(false);
   const [targets, setTargets] = useState([]);
   const [settings, setSettings] = useState({
     deadline_dow: 4, deadline_time: '22:00', open_hour: 7, close_hour: 25,
@@ -97,6 +105,9 @@ export default function Schedule() {
 
   const weekEnd = addDays(weekStart, 6);
   const weekKey = ymd(weekStart);
+  // Κλειδωμένη = δημοσιευμένη ΚΑΙ χωρίς υποστήριξη προσχεδίου στη βάση. Με το
+  // 0032 δεν κλειδώνει ποτέ τίποτα: γράφεις σε προσχέδιο, δημοσιεύεις όποτε θες.
+  const locked = !!publishedAt && legacySchema;
   const dates = useMemo(
     () => Array.from({ length: 7 }, (_, i) => ymd(addDays(weekStart, i))),
     [weekStart]
@@ -106,23 +117,51 @@ export default function Schedule() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [driverRes, availRes, weeksRes, shiftRes, schedRes, targetRes, setRes] = await Promise.all([
+      const [driverRes, availRes, weeksRes, targetRes, setRes] = await Promise.all([
         supabase.from('drivers').select('id, full_name, is_active, is_blocked').order('full_name'),
         supabase.from('driver_availability')
           .select('driver_id, work_date, start_time, end_time, all_day, by_admin')
           .eq('week_start', weekKey).order('work_date').order('start_time'),
         supabase.from('driver_availability_weeks')
           .select('driver_id, updated_at, revisions').eq('week_start', weekKey),
-        supabase.from('schedule_shifts')
-          .select('driver_id, work_date, start_time, end_time, source')
-          .eq('week_start', weekKey).order('work_date').order('start_time'),
-        supabase.from('schedule_weeks').select('published_at, updated_at').eq('week_start', weekKey).maybeSingle(),
         supabase.from('schedule_coverage_targets').select('*').order('start_hour'),
         supabase.from('schedule_settings')
           .select('deadline_dow, deadline_time, open_hour, close_hour').maybeSingle(),
       ]);
 
       if (driverRes.error) throw driverRes.error;
+
+      // ── ΔΟΥΛΕΥΕΙ ΚΑΙ ΜΕ ΤΑ ΔΥΟ ΣΧΗΜΑΤΑ ─────────────────────────────────────
+      // Ο κώδικας βγαίνει στον αέρα πριν προλάβει να τρέξει το migration 0032
+      // στη βάση — και ανάμεσα στα δύο, η καρτέλα δεν επιτρέπεται ούτε να σκάει
+      // ούτε (χειρότερα) να δείχνει άδεια εβδομάδα. Δοκιμάζουμε πρώτα το νέο
+      // σχήμα· αν λείπουν οι στήλες, πέφτουμε στο παλιό ερώτημα και η οθόνη
+      // συμπεριφέρεται ακριβώς όπως πριν: δημοσιευμένη εβδομάδα = κλειδωμένη.
+      let legacy = false;
+      let shiftRes = await supabase.from('schedule_shifts')
+        .select('driver_id, work_date, start_time, end_time, source, is_draft')
+        .eq('week_start', weekKey).order('work_date').order('start_time');
+      let schedRes = await supabase.from('schedule_weeks')
+        .select('published_at, updated_at, has_draft, revision')
+        .eq('week_start', weekKey).maybeSingle();
+
+      const missingColumn = (e) => e && /is_draft|has_draft|revision/.test(e.message || '');
+      if (missingColumn(shiftRes.error) || missingColumn(schedRes.error)) {
+        legacy = true;
+        shiftRes = await supabase.from('schedule_shifts')
+          .select('driver_id, work_date, start_time, end_time, source')
+          .eq('week_start', weekKey).order('work_date').order('start_time');
+        schedRes = await supabase.from('schedule_weeks')
+          .select('published_at, updated_at').eq('week_start', weekKey).maybeSingle();
+      }
+      setLegacySchema(legacy);
+
+      // ΤΑ ΣΦΑΛΜΑΤΑ ΤΩΝ ΒΑΡΔΙΩΝ ΔΕΝ ΣΙΩΠΟΥΝ ΠΙΑ. Μέχρι σήμερα ένα αποτυχημένο
+      // shiftRes/schedRes περνούσε ως `|| []`, δηλαδή η οθόνη έδειχνε ΑΔΕΙΑ και
+      // ΑΔΗΜΟΣΙΕΥΤΗ εβδομάδα — και ο διαχειριστής θα ξανάχτιζε από την αρχή ένα
+      // πρόγραμμα που υπάρχει ήδη.
+      if (shiftRes.error) throw shiftRes.error;
+      if (schedRes.error) throw schedRes.error;
 
       // Μπλοκαρισμένοι διανομείς δεν μπαίνουν σε πρόγραμμα. Οι ανενεργοί ΝΑΙ:
       // το `is_active` εδώ σημαίνει «σε βάρδια τώρα», όχι «εργαζόμενος».
@@ -144,8 +183,20 @@ export default function Schedule() {
       (weeksRes.data || []).forEach((r) => { sub[r.driver_id] = r; });
       setSubmitted(sub);
 
+      // ── ΠΟΙΑ ΕΚΔΟΣΗ ΕΠΕΞΕΡΓΑΖΟΜΑΣΤΕ (migration 0032) ─────────────────────
+      // Ο πίνακας κρατά ΔΥΟ εκδόσεις της εβδομάδας: τη δημοσιευμένη
+      // (is_draft = false) που βλέπουν τα κινητά, και το προσχέδιο του
+      // διαχειριστή. Όταν υπάρχει προσχέδιο το επεξεργαζόμαστε· αλλιώς
+      // ξεκινάμε από τη δημοσιευμένη.
+      //
+      // Η σημαία `has_draft` έρχεται από τη βάση και ΔΕΝ συνάγεται από το
+      // «υπάρχουν γραμμές προσχεδίου»: μια εβδομάδα που ο διαχειριστής άδειασε
+      // ολόκληρη είναι έγκυρο προσχέδιο με μηδέν γραμμές.
+      const weekHasDraft = !!schedRes.data?.has_draft;
+      const shiftRows = (shiftRes.data || []).filter((r) => !!r.is_draft === weekHasDraft);
+
       const d = {};
-      (shiftRes.data || []).forEach((r) => {
+      shiftRows.forEach((r) => {
         if (!d[r.driver_id]) d[r.driver_id] = {};
         if (!d[r.driver_id][r.work_date]) d[r.driver_id][r.work_date] = [];
         d[r.driver_id][r.work_date].push({
@@ -191,6 +242,7 @@ export default function Schedule() {
       setAutoMerged(mergedNames);
 
       setPublishedAt(schedRes.data?.published_at || null);
+      setHasDraft(weekHasDraft);
       setTargets(targetRes.data || []);
       if (setRes.data) setSettings(setRes.data);
     } catch (e) {
@@ -295,7 +347,11 @@ export default function Schedule() {
   // ξανάχτιζε το προσχέδιο από τη βάση και θα έσβηνε τις μη αποθηκευμένες
   // αλλαγές του διαχειριστή.
   async function toggleAllDay(driverId, date) {
-    if (publishedAt) return;
+    // ΧΩΡΙΣ φράχτη δημοσίευσης (απόφαση πελάτη 06/09/2026): αφού το πρόγραμμα
+    // αλλάζει και μετά την ανακοίνωση, έχει νόημα να καταγράφεται και μια
+    // διαθεσιμότητα που έρχεται τηλεφωνικά μετά από αυτήν. Στο παλιό σχήμα
+    // κρατιέται ο παλιός φράχτης, γιατί εκεί η βάση όντως κλειδώνει.
+    if (locked) return;
     const slots = availability[driverId]?.[date] || [];
     const ownDeclaration = slots.find((s) => s.all_day && !s.by_admin);
     if (ownDeclaration) {
@@ -361,14 +417,26 @@ export default function Schedule() {
       return false;
     }
     setDirty(false);
-    if (!silent) toast.success('Το προσχέδιο αποθηκεύτηκε.');
+    // Από τη στιγμή που γράφτηκε, υπάρχει προσχέδιο στη βάση που ΔΕΝ έχει
+    // φτάσει στα κινητά — και η οθόνη πρέπει να το λέει.
+    setHasDraft(true);
+    if (!silent) toast.success('Το προσχέδιο αποθηκεύτηκε. Δεν έχει σταλεί ακόμη στους διανομείς.');
     return true;
   }
 
   async function publish() {
+    // Δύο διαφορετικές πράξεις με το ίδιο κουμπί, άρα δύο διαφορετικά κείμενα:
+    // η πρώτη ανακοίνωση απλώς ανοίγει το πρόγραμμα· η επαναδημοσίευση αλλάζει
+    // ώρες σε ανθρώπους που έχουν ήδη κανονίσει τη ζωή τους πάνω τους.
+    const republish = !!publishedAt;
     const ok = await confirmDialog(
-      'Το πρόγραμμα θα γίνει ορατό σε όλους τους διανομείς και οι δηλώσεις διαθεσιμότητας της εβδομάδας θα κλειδώσουν. Συνέχεια;',
-      { title: 'Δημοσίευση προγράμματος', confirmLabel: 'Δημοσίευση' }
+      republish
+        ? 'Οι αλλαγές θα αντικαταστήσουν την έκδοση που βλέπουν τώρα οι διανομείς, και θα τους βγει κόκκινη ειδοποίηση ότι το πρόγραμμα άλλαξε. Συνέχεια;'
+        : 'Το πρόγραμμα θα γίνει ορατό σε όλους τους διανομείς. Συνέχεια;',
+      {
+        title: republish ? 'Δημοσίευση αλλαγών' : 'Δημοσίευση προγράμματος',
+        confirmLabel: republish ? 'Δημοσίευση αλλαγών' : 'Δημοσίευση',
+      }
     );
     if (!ok) return;
 
@@ -384,12 +452,15 @@ export default function Schedule() {
     setBusy(false);
     if (error) { toast.error('Δεν δημοσιεύτηκε: ' + error.message); return; }
     setPublishedAt(data || new Date().toISOString());
-    toast.success('Το πρόγραμμα ανακοινώθηκε στους διανομείς.');
+    setHasDraft(false);
+    toast.success(republish
+      ? 'Οι αλλαγές στάλθηκαν. Οι διανομείς θα δουν ειδοποίηση όταν ανοίξουν το πρόγραμμά τους.'
+      : 'Το πρόγραμμα ανακοινώθηκε στους διανομείς.');
   }
 
   async function unpublish() {
     const ok = await confirmDialog(
-      'Το πρόγραμμα θα πάψει να φαίνεται στους διανομείς και θα ξεκλειδώσουν οι δηλώσεις. Συνέχεια;',
+      'Το πρόγραμμα θα πάψει να φαίνεται στους διανομείς. Συνέχεια;',
       { title: 'Απόσυρση προγράμματος', confirmLabel: 'Απόσυρση', danger: true }
     );
     if (!ok) return;
@@ -652,7 +723,7 @@ export default function Schedule() {
             className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-50" style={btn}>
             <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} /> Ανανέωση
           </button>
-          <button onClick={autoFill} disabled={publishedAt || busy}
+          <button onClick={autoFill} disabled={locked || busy}
             title="Πετάει τις χειροκίνητες αλλαγές και ξαναχτίζει το προσχέδιο από τις δηλώσεις"
             className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-40" style={btn}>
             <Wand2 size={16} /> Επαναφορά από δηλώσεις
@@ -661,7 +732,18 @@ export default function Schedule() {
             className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-40" style={btn}>
             <Save size={16} /> Αποθήκευση
           </button>
-          {publishedAt ? (
+          {/* Τρεις καταστάσεις, όχι δύο (migration 0032):
+                 · αδημοσίευτη            → «Δημοσίευση»
+                 · δημοσιευμένη + αλλαγές → «Δημοσίευση αλλαγών» (χρυσό, τραβάει
+                   το μάτι: όσο δεν πατηθεί, τα κινητά δείχνουν την παλιά έκδοση)
+                 · δημοσιευμένη, καθαρή   → μόνο «Απόσυρση» */}
+          {publishedAt && !legacySchema && (hasDraft || dirty) ? (
+            <button onClick={publish} disabled={busy}
+              title="Οι διανομείς βλέπουν ακόμη την προηγούμενη έκδοση. Με τη δημοσίευση θα δουν κόκκινη ειδοποίηση ότι άλλαξε το πρόγραμμα."
+              className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50" style={goldBtn}>
+              <Send size={16} /> Δημοσίευση αλλαγών
+            </button>
+          ) : publishedAt ? (
             <button onClick={unpublish} disabled={busy}
               className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
               style={{ backgroundColor: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)' }}>
@@ -742,7 +824,8 @@ export default function Schedule() {
               <Clock size={18} /> Προθεσμία δήλωσης
             </h3>
             <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-              Εμφανίζεται ως υπενθύμιση στην εφαρμογή. Δεν κλειδώνει τίποτα — το κλείδωμα γίνεται με τη δημοσίευση.
+              Εμφανίζεται ως υπενθύμιση στην εφαρμογή. Δεν κλειδώνει τίποτα: οι διανομείς μπορούν να
+              δηλώνουν και μετά τη δημοσίευση.
             </p>
             <div className="flex flex-wrap items-end gap-3">
               <div>
@@ -792,7 +875,13 @@ export default function Schedule() {
           Επόμενη εβδομάδα
         </button>
 
-        {publishedAt ? (
+        {publishedAt && !legacySchema && (hasDraft || dirty) ? (
+          <span className="px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2"
+            style={{ backgroundColor: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)' }}
+            title="Οι διανομείς βλέπουν ακόμη την έκδοση που ανακοινώθηκε.">
+            <AlertTriangle size={14} /> Αλλαγές χωρίς δημοσίευση
+          </span>
+        ) : publishedAt ? (
           <span className="px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2"
             style={{ backgroundColor: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)' }}>
             <CheckCircle2 size={14} /> Ανακοινώθηκε {new Date(publishedAt).toLocaleDateString('el-GR')}
@@ -1117,13 +1206,13 @@ export default function Schedule() {
                           }
                           return (
                             <button key={index}
-                              onClick={() => !publishedAt && setEditing({ driverId: driver.id, date, index })}
+                              onClick={() => !locked && setEditing({ driverId: driver.id, date, index })}
                               className="w-full mb-1 px-2 py-1 rounded-lg text-xs font-bold text-left"
                               style={{
                                 backgroundColor: s.source === 'manual' ? 'var(--accent)' : 'var(--accent-muted)',
                                 color: s.source === 'manual' ? '#fff' : 'var(--accent)',
                                 border: '1px solid var(--accent)',
-                                cursor: publishedAt ? 'default' : 'pointer',
+                                cursor: locked ? 'default' : 'pointer',
                               }}
                               title={s.source === 'manual' ? 'Χειροκίνητη αλλαγή' : 'Από τη δήλωση του διανομέα'}>
                               {s.start}–{s.end}
@@ -1156,7 +1245,7 @@ export default function Schedule() {
                           </div>
                         )}
 
-                        {!publishedAt && (
+                        {!locked && (
                           <div className="flex gap-1">
                             <button onClick={() => addSlot(driver.id, date)}
                               className="flex-1 py-1 rounded-lg flex items-center justify-center"
@@ -1202,8 +1291,11 @@ export default function Schedule() {
         <strong style={{ color: 'var(--text-primary)' }}>+</strong> βάζεις ώρες με το χέρι, με τον{' '}
         <strong style={{ color: 'var(--warning)' }}>ήλιο</strong> καταγράφεις ότι σου είπε «βάλε ό,τι ώρες θες» —
         μένει σημειωμένο ως «όλη μέρα» για να το θυμάσαι όταν καλύπτεις τα κενά. Με τη{' '}
-        <strong>Δημοσίευση</strong> το πρόγραμμα γίνεται ορατό στους διανομείς («Το πρόγραμμά μου») και κλειδώνουν
-        οι δηλώσεις της εβδομάδας.
+        <strong>Δημοσίευση</strong> το πρόγραμμα γίνεται ορατό στους διανομείς («Το πρόγραμμά μου»).
+        {' '}<strong style={{ color: 'var(--text-primary)' }}>Μπορείς να το αλλάξεις και μετά</strong>: όσο
+        δουλεύεις πάνω σε δημοσιευμένη εβδομάδα, οι διανομείς συνεχίζουν να βλέπουν την προηγούμενη έκδοση
+        μέχρι να πατήσεις «Δημοσίευση αλλαγών» — και τότε τους βγαίνει κόκκινη ειδοποίηση, μία φορά στον
+        καθένα.
       </div>
     </div>
   );
