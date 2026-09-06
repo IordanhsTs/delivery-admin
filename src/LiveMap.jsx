@@ -1808,7 +1808,9 @@ function niceScale(max, targetSteps = 4) {
 // ετικέτας δεν επηρεάζει το ύψος/πλάτος της μπάρας και μπορεί να είναι αναγνώσιμη
 // (10px, ανά 4 ώρες, μορφή «07:00»). Η τρέχουσα ώρα δεν παίρνει δικό της νούμερο
 // — θα στοίβαζε ετικέτες — αλλά πράσινη κουκκίδα στον άξονα.
-function WorkloadChart({ matrix, loading, isDark }) {
+// Εξάγεται για το preview harness (preview/main.jsx): ο άξονας y και το
+// άγγιγμα στο κινητό δεν ελέγχονται αλλιώς χωρίς login και Google Maps.
+export function WorkloadChart({ matrix, loading, isDark }) {
   const todayDow = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayDow);
   // ΚΙΝΗΤΟ (αίτημα πελάτη 06/09/2026): στην οθόνη αφής δεν υπάρχει hover, οπότε
