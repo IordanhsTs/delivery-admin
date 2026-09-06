@@ -2,16 +2,40 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { liveChannel } from './live';
 import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
-import { Megaphone, Send, ChevronDown } from 'lucide-react';
+import { Megaphone, Send, ChevronDown, Search, X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import StoreInbox from './StoreInbox';
+import { useBackClose } from './backNav';
+
+// Σύγκριση ονομάτων χωρίς να χρειάζεται ο διαχειριστής να πετύχει τόνους και
+// πεζά/κεφαλαία: «παπαδοπουλος» βρίσκει το «Παπαδόπουλος».
+//
+// Το NFD σπάει κάθε τονισμένο γράμμα σε γράμμα + τόνο και το regex πετάει τους
+// τόνους. Το τελικό σίγμα μπαίνει χωριστά γιατί ΔΕΝ είναι θέμα τόνου: το «ς»
+// και το «σ» είναι δύο διαφορετικοί χαρακτήρες, και κανείς δεν πληκτρολογεί
+// τελικό σίγμα στη μέση μιας αναζήτησης.
+const norm = (s) =>
+  (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ς/g, 'σ')
+    .toLowerCase()
+    .trim();
+
+/** Καταστήματα έχουν `name`, διανομείς `full_name` — μία θέση να το ξέρει. */
+const labelOf = (entity) => entity.name || entity.full_name || '';
 
 export default function Messages() {
   const [targetType, setTargetType] = useState('store'); // 'store' or 'driver'
   const [selectedTargets, setSelectedTargets] = useState(['all']);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [message, setMessage] = useState('');
+  // ΑΝΑΖΗΤΗΣΗ ΠΑΡΑΛΗΠΤΗ (αίτημα πελάτη 06/09/2026): «αν έχω 29 διανομείς ή 50
+  // καταστήματα δεν θα κάθομαι να ψάχνω αυτόν που θέλω». Πληκτρολογείς όνομα,
+  // από κάτω μένουν μόνο όσοι ταιριάζουν.
+  const [query, setQuery] = useState('');
+  const pickerRef = useRef(null);
 
   const toggleTarget = (id) => {
     if (id === 'all') {
@@ -27,7 +51,7 @@ export default function Messages() {
       setSelectedTargets(newTargets);
     }
   };
-  
+
   const [stores, setStores] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -40,6 +64,31 @@ export default function Messages() {
   // υπό ανανέωση μπορεί η μία να πετύχει (φτάνει το push) και η άλλη να πέσει σε 401,
   // δείχνοντας σφάλμα ενώ το μήνυμα ήδη παραδόθηκε. Το ref μπλοκάρει συγχρονισμένα.
   const sendingRef = useRef(false);
+
+  // ── Η λίστα παραληπτών, φιλτραρισμένη με ό,τι πληκτρολογείται ─────────────
+  const entities = targetType === 'store' ? stores : drivers;
+  const q = norm(query);
+  const filtered = q ? entities.filter((e) => norm(labelOf(e)).includes(q)) : entities;
+  // Τα ονόματα των ήδη επιλεγμένων — για τα chips πάνω από το πεδίο. Δεν
+  // φιλτράρονται: ο διαχειριστής πρέπει να βλέπει τι έχει διαλέξει ακόμη κι όσο
+  // ψάχνει τον επόμενο.
+  const chosen = selectedTargets.includes('all')
+    ? []
+    : entities.filter((e) => selectedTargets.includes(e.id));
+
+  // Κλείσιμο με κλικ έξω από το πλαίσιο. Χωρίς αυτό το μενού έμενε ανοιχτό και
+  // σκέπαζε το πεδίο του μηνύματος από κάτω.
+  useEffect(() => {
+    if (!dropdownOpen) return undefined;
+    const onDown = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [dropdownOpen]);
+
+  // Το κουμπί «πίσω» του κινητού κλείνει πρώτα το μενού, όπως κάθε άλλο στρώμα.
+  useBackClose(dropdownOpen, () => setDropdownOpen(false));
 
   useEffect(() => {
     async function fetchEntities() {
@@ -194,7 +243,7 @@ export default function Messages() {
                   name="targetType" 
                   value="store" 
                   checked={targetType === 'store'} 
-                  onChange={() => { setTargetType('store'); setSelectedTargets(['all']); }}
+                  onChange={() => { setTargetType('store'); setSelectedTargets(['all']); setQuery(''); }}
                   className="w-4 h-4 accent-[#C5A066]"
                 />
                 <span className="font-medium" style={{ color: targetType === 'store' ? 'var(--accent)' : 'var(--text-secondary)' }}>Καταστήματα</span>
@@ -206,7 +255,7 @@ export default function Messages() {
                   name="targetType" 
                   value="driver" 
                   checked={targetType === 'driver'} 
-                  onChange={() => { setTargetType('driver'); setSelectedTargets(['all']); }}
+                  onChange={() => { setTargetType('driver'); setSelectedTargets(['all']); setQuery(''); }}
                   className="w-4 h-4 accent-[#C5A066]"
                 />
                 <span className="font-medium" style={{ color: targetType === 'driver' ? 'var(--accent)' : 'var(--text-secondary)' }}>Διανομείς</span>
@@ -214,54 +263,120 @@ export default function Messages() {
             </div>
           </div>
 
-          {/* 2. Επιλογή Συγκεκριμένου ή Όλων (Πολλαπλή Επιλογή) */}
-          <div className="flex flex-col gap-2 relative">
+          {/* 2. Επιλογή Συγκεκριμένου ή Όλων (πληκτρολόγηση ονόματος + πολλαπλή επιλογή) */}
+          <div className="flex flex-col gap-2" ref={pickerRef}>
             <label className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              2. Ποιοι θα το δουν; (Επιλέξτε ένα ή περισσότερα)
+              2. Ποιοι θα το δουν; (γράψτε όνομα ή επιλέξτε)
             </label>
-            
-            <div 
-              className={`flex items-center justify-between cursor-pointer ${inputClass}`}
-              style={getDynamicInputStyle()}
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-            >
-              <span className="truncate">
-                {selectedTargets.includes('all') 
-                  ? `Όλοι οι ${targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}` 
-                  : `${selectedTargets.length} επιλεγμένοι παραλήπτες`
-                }
-              </span>
-              <ChevronDown size={18} className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
-            </div>
 
-            {dropdownOpen && (
-              <div 
-                className="absolute top-full left-0 right-0 mt-2 z-20 flex flex-col gap-1.5 max-h-60 overflow-y-auto p-3 rounded-xl border text-sm shadow-xl"
-                style={{ ...getDynamicInputStyle(), backgroundColor: 'var(--bg-card)' }}
-              >
-                <label className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedTargets.includes('all')} 
-                    onChange={() => toggleTarget('all')}
-                    className="w-4 h-4 accent-[#C5A066]"
-                  />
-                  <span className="font-semibold text-[var(--text-primary)]">Όλοι οι {targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}</span>
-                </label>
-                
-                {(targetType === 'store' ? stores : drivers).map(entity => (
-                  <label key={entity.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedTargets.includes(entity.id)} 
-                      onChange={() => toggleTarget(entity.id)}
-                      className="w-4 h-4 accent-[#C5A066]"
-                    />
-                    <span className="text-[var(--text-primary)]">{entity.name || entity.full_name}</span>
-                  </label>
+            {/* Οι ήδη επιλεγμένοι, ως αφαιρούμενα chips. Το «Όλοι» δεν γίνεται chip —
+                είναι η προεπιλογή και φαίνεται μέσα στο πεδίο. */}
+            {chosen.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {chosen.map(entity => (
+                  <span
+                    key={entity.id}
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-semibold"
+                    style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}
+                  >
+                    {labelOf(entity)}
+                    <button
+                      type="button"
+                      onClick={() => toggleTarget(entity.id)}
+                      className="p-0.5 rounded hover:bg-black/10"
+                      title="Αφαίρεση παραλήπτη"
+                      aria-label={`Αφαίρεση ${labelOf(entity)}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTargets(['all'])}
+                  className="text-xs font-semibold px-2 py-1 rounded-lg"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Καθαρισμός
+                </button>
               </div>
             )}
+
+            {/* Το πεδίο είναι ΚΑΝΟΝΙΚΟ input, όχι ψεύτικο κουμπί: στο κινητό ανοίγει
+                πληκτρολόγιο και ο διαχειριστής γράφει κατευθείαν το όνομα. */}
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: 'var(--text-muted)' }}
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true); }}
+                onFocus={() => setDropdownOpen(true)}
+                placeholder={
+                  selectedTargets.includes('all')
+                    ? `Όλοι οι ${targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'} — γράψτε για συγκεκριμένο`
+                    : `${selectedTargets.length} επιλεγμένοι — γράψτε για να προσθέσετε`
+                }
+                className={`${inputClass} pl-9 pr-10`}
+                style={getDynamicInputStyle()}
+              />
+              <button
+                type="button"
+                onClick={() => setDropdownOpen((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
+                style={{ color: 'var(--text-muted)' }}
+                title={dropdownOpen ? 'Κλείσιμο λίστας' : 'Άνοιγμα λίστας'}
+                aria-label={dropdownOpen ? 'Κλείσιμο λίστας' : 'Άνοιγμα λίστας'}
+              >
+                <ChevronDown size={18} className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {dropdownOpen && (
+                <div
+                  className="absolute top-full left-0 right-0 mt-2 z-20 flex flex-col gap-1.5 max-h-60 overflow-y-auto p-3 rounded-xl border text-sm shadow-xl"
+                  style={{ ...getDynamicInputStyle(), backgroundColor: 'var(--bg-card)' }}
+                >
+                  {/* Το «Όλοι» κρύβεται μόλις αρχίσει η αναζήτηση: όποιος γράφει
+                      όνομα δεν ψάχνει το «σε όλους». */}
+                  {!q && (
+                    <label className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedTargets.includes('all')}
+                        onChange={() => toggleTarget('all')}
+                        className="w-4 h-4 accent-[#C5A066]"
+                      />
+                      <span className="font-semibold text-[var(--text-primary)]">Όλοι οι {targetType === 'store' ? 'Καταστηματάρχες' : 'Διανομείς'}</span>
+                    </label>
+                  )}
+
+                  {filtered.length === 0 ? (
+                    <p className="m-0 p-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Κανένα αποτέλεσμα για «{query}».
+                    </p>
+                  ) : (
+                    filtered.map(entity => {
+                      const picked = selectedTargets.includes(entity.id);
+                      return (
+                        <label key={entity.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={picked}
+                            onChange={() => toggleTarget(entity.id)}
+                            className="w-4 h-4 accent-[#C5A066]"
+                          />
+                          <span className="text-[var(--text-primary)] flex-1">{labelOf(entity)}</span>
+                          {picked && <Check size={14} style={{ color: 'var(--accent)' }} />}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 3. Μήνυμα */}
