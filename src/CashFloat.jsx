@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
+import { onWake } from './live';
 import { useCashFloat } from './useCashFloat';
 import { confirmDialog } from './ConfirmDialog';
 import {
@@ -148,6 +149,16 @@ export default function CashFloat() {
   }, []);
 
   useEffect(() => { fetchSettled(); }, [fetchSettled]);
+
+  // ── Φρεσκάρισμα μόλις ξαναγίνει ορατή η καρτέλα (αίτημα πελάτη 06/09/2026) ──
+  // Η οθόνη του ταμείου έμενε ανοιχτή για ώρες και έδειχνε ό,τι είχε φορτώσει
+  // κατά το άνοιγμα — στο μεταξύ οι διανομείς είχαν δηλώσει POS και βενζίνες από
+  // το κιόσκ. Ίδιο μοτίβο με τον ζωντανό χάρτη: το onWake χτυπά σε
+  // visibilitychange / focus / online / επιστροφή από bfcache, με throttle 3''.
+  useEffect(
+    () => onWake(() => { fetchHistory(); fetchPending(); fetchSettled(); }),
+    [fetchHistory, fetchPending, fetchSettled],
+  );
 
   async function undoSettled(s) {
     setUndoingId(s.id);

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
+import { onWake } from './live';
 import * as XLSX from 'xlsx';
 import { Receipt, Download, Wallet, Banknote, TrendingUp, Building, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -41,10 +42,11 @@ export default function BillingDashboard() {
   const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
 
-  async function fetchCompletedOrders() {
+  async function fetchCompletedOrders({ silent = false } = {}) {
     if (!startDate || !endDate) return;
-    setLoading(true);
-    setLoadedCount(0);
+    // Στο σιωπηλό φρεσκάρισμα δεν αγγίζουμε το `loading`: θα γκρέμιζε το
+    // περιεχόμενο σε skeleton τη στιγμή που ο διαχειριστής διαβάζει νούμερα.
+    if (!silent) { setLoading(true); setLoadedCount(0); }
 
     const startIso = new Date(startDate).toISOString();
     const endIso = new Date(endDate).toISOString();
@@ -76,7 +78,11 @@ export default function BillingDashboard() {
 
     if (data) {
       setOrders(data);
-      if (truncated) {
+      if (silent) {
+        // Σιωπηλά σημαίνει σιωπηλά: ο διαχειριστής δεν ζήτησε αυτό το ερώτημα,
+        // δεν του χρωστάμε επιβεβαίωση — και ένα «Βρέθηκαν 8.412 παραγγελίες!»
+        // κάθε φορά που γυρνά στην καρτέλα θα ήταν σκέτη ενόχληση.
+      } else if (truncated) {
         toast.warning(
           `Το διάστημα είναι τεράστιο: τα ποσά αφορούν τις ${HARD_CAP.toLocaleString('el-GR')} πιο πρόσφατες παραγγελίες. Στενέψτε τις ημερομηνίες.`,
           { duration: 8000 }
@@ -89,10 +95,24 @@ export default function BillingDashboard() {
     }
     if (error) {
       console.error("Σφάλμα:", error);
-      toast.error("Σφάλμα κατά την ανάκτηση των παραγγελιών.");
+      if (!silent) toast.error("Σφάλμα κατά την ανάκτηση των παραγγελιών.");
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
+
+  // ── Φρεσκάρισμα μόλις ξαναγίνει ορατή η καρτέλα (αίτημα πελάτη 06/09/2026) ──
+  // ΜΟΝΟ ΑΝ ΕΧΕΙ ΗΔΗ ΤΡΕΞΕΙ ΕΡΩΤΗΜΑ. Η εκκαθάριση δεν είναι ζωντανή οθόνη σαν
+  // τον χάρτη: είναι αναφορά πάνω σε διάστημα που διάλεξε ο διαχειριστής, και
+  // κατεβάζει έως δεκάδες χιλιάδες γραμμές σε σελίδες. Χωρίς αυτόν τον φράχτη
+  // κάθε alt-tab θα ξεκινούσε ένα βαρύ ερώτημα που κανείς δεν ζήτησε.
+  //
+  // Το `ordersRef` σπάει τη στάσιμη κλειστότητα: το onWake δηλώνεται μία φορά,
+  // αλλά πρέπει να βλέπει το ΤΡΕΧΟΝ πλήθος παραγγελιών κάθε φορά που χτυπά.
+  const ordersRef = useRef(orders);
+  useEffect(() => { ordersRef.current = orders; });
+  useEffect(() => onWake(() => {
+    if (ordersRef.current.length > 0) fetchCompletedOrders({ silent: true });
+  }));
 
   const COLORS = ['#C5A066', '#38EF7D', '#9D4EDD', '#60A5FA', '#FBBF24', '#F87171'];
 
@@ -241,7 +261,9 @@ export default function BillingDashboard() {
           className="w-full md:w-auto p-2.5 rounded-lg border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 transition-colors btn-glass text-adaptive-light"
         />
         <button 
-          onClick={fetchCompletedOrders} 
+          // Ρητά χωρίς όρισμα: σκέτο `onClick={fetchCompletedOrders}` θα περνούσε
+          // το MouseEvent στη θέση των επιλογών.
+          onClick={() => fetchCompletedOrders()} 
           disabled={loading} 
           className="w-full md:w-auto py-2.5 px-6 btn-glass text-[#C5A066] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] rounded-lg cursor-pointer font-bold transition-all disabled:opacity-50 mt-2 md:mt-0"
         >

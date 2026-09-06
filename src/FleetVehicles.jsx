@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { confirmDialog } from './ConfirmDialog';
+import { onWake } from './live';
 import {
   Bike, Plus, RefreshCcw, X, Save, Trash2, Wrench, ShieldCheck, ClipboardCheck,
   Gauge, Route, User, AlertTriangle, StickyNote, Euro, Calendar, Archive, Check, Undo2,
@@ -181,6 +182,11 @@ export default function FleetVehicles() {
   }, []);
 
   useEffect(() => { fetchFleet(); }, [fetchFleet]);
+
+  // Φρεσκάρισμα μόλις ξαναγίνει ορατή η καρτέλα (αίτημα πελάτη 06/09/2026).
+  // Τα χιλιόμετρα και οι ειδοποιήσεις κοντέρ γράφονται από τα κινητά των
+  // διανομέων σε κάθε βάρδια — μια οθόνη ανοιχτή από το πρωί έδειχνε χθεσινά νούμερα.
+  useEffect(() => onWake(fetchFleet), [fetchFleet]);
 
   async function acknowledgeAlert(id) {
     const { error } = await supabase.rpc('ack_odometer_alert', { p_id: id, p_note: null });

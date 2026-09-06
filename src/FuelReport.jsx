@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
+import { onWake } from './live';
 import * as XLSX from 'xlsx';
 import {
   Fuel, ChevronLeft, ChevronRight, Download, Settings2, Route,
@@ -75,6 +76,12 @@ export default function FuelReport() {
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  // Φρεσκάρισμα μόλις ξαναγίνει ορατή η καρτέλα (αίτημα πελάτη 06/09/2026).
+  // Μόνο η αναφορά: τα χιλιόμετρα μεγαλώνουν όσο τρέχουν οι βάρδιες, ενώ οι
+  // ρυθμίσεις κατανάλωσης αλλάζουν μόνο από εδώ — και θα έσβηναν ό,τι πληκτρολογείται
+  // εκείνη τη στιγμή στα πεδία των ρυθμίσεων.
+  useEffect(() => onWake(fetchReport), [fetchReport]);
 
   async function saveSettings() {
     const l = parseFloat(settings.l_per_100km);
