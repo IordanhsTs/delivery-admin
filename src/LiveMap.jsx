@@ -1117,6 +1117,76 @@ export default function LiveMap({ navHidden = false }) {
     borderLeft: `3px solid ${tint}`,
   });
 
+  // ── «Σήμερα με μια ματιά», σε μεταβλητή γιατί μπαίνει σε ΔΥΟ θέσεις ────────
+  // Αίτημα πελάτη 06/09/2026: στο κινητό η σειρά πρέπει να είναι
+  //   Χάρτης → Ενεργές → Αποδεκτές → Διανομείς → Σήμερα με μια ματιά → Φόρτος
+  // ενώ στον υπολογιστή μένει όπως ήταν (μέσα στη δεξιά στήλη, κάτω από τις
+  // λίστες παραγγελιών).
+  //
+  // ΓΙΑΤΙ ΟΧΙ CSS `order`: οι δύο γειτονιές είναι σε ΔΙΑΦΟΡΕΤΙΚΑ flex containers
+  // (η μία στο <aside> δίπλα στον χάρτη, η άλλη στην κάτω γραμμή), και το
+  // `order` ταξινομεί μόνο αδέρφια του ίδιου container. Οπότε το ίδιο block
+  // μπαίνει και στις δύο θέσεις, με το ένα κρυμμένο κάθε φορά. Μία πηγή
+  // αλήθειας — δεν αντιγράφεται κώδικας που θα ξέφευγε στην επόμενη αλλαγή.
+  const glanceSection = (
+    <RailSection Icon={TrendingUp} title="Σήμερα με μια ματιά" tint="var(--text-secondary)">
+      <div className="flex flex-wrap gap-2">
+        <StatTile
+          Icon={Check}
+          value={ordersToday}
+          label="Ολοκληρωμένες"
+          tint="var(--success)"
+          bg="var(--success-bg)"
+          border="var(--success-border)"
+          title="Παραγγελίες που ολοκληρώθηκαν σήμερα"
+        />
+
+        <StatTile
+          Icon={Timer}
+          value={avgDeliveryToday !== null ? `${avgDeliveryToday.toFixed(1)} λ.` : '—'}
+          // «διανομής» και όχι σκέτο «χρόνος» (πελάτης 06/09/2026): το νούμερο
+          // εδώ μετρά ΑΠΟΔΟΧΗ→ΠΟΡΤΑ, ενώ τα Στατιστικά μετρούν ΔΗΜΙΟΥΡΓΙΑ→ΠΟΡΤΑ.
+          // Δύο σωστά νούμερα που δεν συμφωνούν ποτέ· η λύση δεν ήταν να γίνουν
+          // ένα, αλλά να λέει το καθένα τι μετράει.
+          label="Μ.Ο. διανομής"
+          tint="var(--info)"
+          bg="var(--info-bg)"
+          border="var(--info-border)"
+          title={avgDeliveryToday !== null
+            ? `Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες`
+              + ` — ${avgDeliveryToday.toFixed(1)} λεπτά, δηλαδή ${Math.floor(avgDeliveryToday)} λ.`
+              + ` και ${Math.round((avgDeliveryToday % 1) * 60)} δευτ.`
+            : 'Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες'}
+        />
+
+        <StatTile
+          Icon={Flame}
+          value={nowLoadText}
+          label="Αναμενόμενος φόρτος"
+          tint={NOW_LOAD_STYLE[nowLoadLevel].tint}
+          bg={NOW_LOAD_STYLE[nowLoadLevel].bg}
+          border={NOW_LOAD_STYLE[nowLoadLevel].border}
+          title={nowLoad === null
+            ? 'Δεν υπάρχουν ακόμη αρκετά δεδομένα για εκτίμηση'
+            : `${DOW_FULL[currentTime.getDay()]} ${String(currentTime.getHours()).padStart(2, '0')}:00–${String((currentTime.getHours() + 1) % 24).padStart(2, '0')}:00 · ιστορικά μ.ό. ${fmtLoad(nowLoad)} παραγγελίες`
+              + (peakValue > 0 ? ` — ${Math.round(nowLoadRatio * 100)}% της σημερινής αιχμής` : '')}
+        />
+
+        <StatTile
+          Icon={TrendingUp}
+          value={peakHour !== null ? `${String(peakHour).padStart(2, '0')}:00` : '—'}
+          label="Ώρα αιχμής"
+          tint="var(--purple)"
+          bg="var(--purple-bg)"
+          border="var(--purple-border)"
+          title={peakHour !== null
+            ? `Ιστορικά η πιο φορτωμένη ώρα για σήμερα — μ.ό. ${peakValue >= 10 ? Math.round(peakValue) : peakValue.toFixed(1)} παραγγελίες`
+            : 'Δεν υπάρχουν ακόμη αρκετά δεδομένα'}
+        />
+      </div>
+    </RailSection>
+  );
+
   return (
     <div className="flex flex-col md:h-full font-sans" style={{ color: 'var(--text-primary)' }}>
 
@@ -1561,63 +1631,9 @@ export default function LiveMap({ navHidden = false }) {
           </RailSection>
           </div>
 
-          {/* Σήμερα με μια ματιά — client feedback 08/09: αντάλλαξε θέση με τους
-              διανομείς. Τα πλακίδια είναι σύνοψη και χωράνε άνετα 2×2 στα 340px,
-              ενώ οι διανομείς χρειάζονται πλάτος για να φαίνονται όλοι μαζί.
-              ΧΩΡΙΣ το πλακίδιο «Διανομείς σε βάρδια» (αίτημα πελάτη): ο ίδιος
-              αριθμός φαίνεται πλέον στην κεφαλίδα της λωρίδας κάτω από τον χάρτη. */}
-          <RailSection Icon={TrendingUp} title="Σήμερα με μια ματιά" tint="var(--text-secondary)">
-            <div className="flex flex-wrap gap-2">
-              <StatTile
-                Icon={Check}
-                value={ordersToday}
-                label="Ολοκληρωμένες"
-                tint="var(--success)"
-                bg="var(--success-bg)"
-                border="var(--success-border)"
-                title="Παραγγελίες που ολοκληρώθηκαν σήμερα"
-              />
-
-              <StatTile
-                Icon={Timer}
-                value={avgDeliveryToday !== null ? `${avgDeliveryToday.toFixed(1)} λ.` : '—'}
-                label="Μ.Ο. χρόνος"
-                tint="var(--info)"
-                bg="var(--info-bg)"
-                border="var(--info-border)"
-                title={avgDeliveryToday !== null
-                  ? `Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες`
-                    + ` — ${avgDeliveryToday.toFixed(1)} λεπτά, δηλαδή ${Math.floor(avgDeliveryToday)} λ.`
-                    + ` και ${Math.round((avgDeliveryToday % 1) * 60)} δευτ.`
-                  : 'Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες'}
-              />
-
-              <StatTile
-                Icon={Flame}
-                value={nowLoadText}
-                label="Αναμενόμενος φόρτος"
-                tint={NOW_LOAD_STYLE[nowLoadLevel].tint}
-                bg={NOW_LOAD_STYLE[nowLoadLevel].bg}
-                border={NOW_LOAD_STYLE[nowLoadLevel].border}
-                title={nowLoad === null
-                  ? 'Δεν υπάρχουν ακόμη αρκετά δεδομένα για εκτίμηση'
-                  : `${DOW_FULL[currentTime.getDay()]} ${String(currentTime.getHours()).padStart(2, '0')}:00–${String((currentTime.getHours() + 1) % 24).padStart(2, '0')}:00 · ιστορικά μ.ό. ${fmtLoad(nowLoad)} παραγγελίες`
-                    + (peakValue > 0 ? ` — ${Math.round(nowLoadRatio * 100)}% της σημερινής αιχμής` : '')}
-              />
-
-              <StatTile
-                Icon={TrendingUp}
-                value={peakHour !== null ? `${String(peakHour).padStart(2, '0')}:00` : '—'}
-                label="Ώρα αιχμής"
-                tint="var(--purple)"
-                bg="var(--purple-bg)"
-                border="var(--purple-border)"
-                title={peakHour !== null
-                  ? `Ιστορικά η πιο φορτωμένη ώρα για σήμερα — μ.ό. ${peakValue >= 10 ? Math.round(peakValue) : peakValue.toFixed(1)} παραγγελίες`
-                  : 'Δεν υπάρχουν ακόμη αρκετά δεδομένα'}
-              />
-            </div>
-          </RailSection>
+          {/* Σήμερα με μια ματιά — ΜΟΝΟ στον υπολογιστή. Στο κινητό ζει πιο
+              κάτω, ανάμεσα σε «Διανομείς» και «Φόρτος» (βλ. glanceSection). */}
+          <div className="hidden md:block">{glanceSection}</div>
         </aside>
       </div>
 
@@ -1728,6 +1744,14 @@ export default function LiveMap({ navHidden = false }) {
             </button>
           </div>
         </div>
+
+        {/* ── Σήμερα με μια ματιά — ΜΟΝΟ στο κινητό ──────────────────────
+            Η κάτω γραμμή είναι flex-col στο κινητό, οπότε εδώ το block πέφτει
+            ακριβώς ανάμεσα σε «Διανομείς» και «Φόρτος» — η σειρά που ζήτησε ο
+            πελάτης. Στον υπολογιστή η ίδια γραμμή γίνεται flex-row και το block
+            θα γινόταν τρίτη στήλη· γι' αυτό κρύβεται από τα md και πάνω, όπου
+            το ίδιο περιεχόμενο δείχνει η δεξιά στήλη. */}
+        <div className="md:hidden px-3 pb-3">{glanceSection}</div>
 
         {/* ── Φόρτος (στη θέση των παλιών «Γρήγορων ενεργειών») ── */}
         <div
