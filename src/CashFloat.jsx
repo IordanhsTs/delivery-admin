@@ -38,6 +38,21 @@ function prettyDateTime(iso) {
   return new Date(iso).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * «Σήμερα · Παρασκευή 6 Σεπ» — κεφαλίδα ομάδας στον εβδομαδιαίο πίνακα.
+ *
+ * Το `ymd` σπάει σε κομμάτια αντί για `new Date(key)`: μια σκέτη ημερομηνία
+ * «2026-09-06» διαβάζεται από τον browser ως UTC μεσάνυχτα, οπότε σε ζώνη
+ * ώρας πίσω από το UTC θα εμφανιζόταν η ΠΡΟΗΓΟΥΜΕΝΗ ημέρα.
+ */
+const DOW_EL = ['Κυριακή', 'Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο'];
+function prettyDay(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const label = `${DOW_EL[date.getDay()]} ${d} ${GREEK_MONTHS[m - 1]}`;
+  return key === ymd(new Date()) ? `Σήμερα · ${label}` : label;
+}
+
 const card = {
   backgroundColor: 'var(--bg-card)',
   border: '1px solid var(--border-default)',
@@ -150,14 +165,52 @@ export default function CashFloat() {
 
   useEffect(() => { fetchSettled(); }, [fetchSettled]);
 
+  // ── ΣΥΝΟΛΟ ΗΜΕΡΑΣ, POS ΚΑΙ ΒΕΝΖΙΝΕΣ (αίτημα πελάτη 06/09/2026) ────────────
+  // Ξεχωριστό ερώτημα και όχι φιλτράρισμα των γραμμών της εβδομάδας: ο
+  // διαχειριστής γυρίζει συχνά σε προηγούμενες εβδομάδες, και το «σήμερα»
+  // πρέπει να λέει σήμερα ό,τι κι αν δείχνει ο πίνακας από κάτω.
+  const [todayTotals, setTodayTotals] = useState({ cash: 0, fuel: 0, count: 0 });
+
+  const fetchToday = useCallback(async () => {
+    const day = ymd(new Date());
+    const { data, error } = await supabase.rpc('admin_cash_ledger_history', { p_from: day, p_to: day });
+    if (error) return; // Σιωπηλά: τα πλακίδια είναι σύνοψη, δεν αξίζουν κόκκινο μήνυμα.
+    const sums = { cash: 0, fuel: 0, count: 0 };
+    (data || []).forEach((r) => {
+      if (r.kind === 'cash' || r.kind === 'fuel') {
+        sums[r.kind] += Number(r.amount || 0);
+        sums.count += 1;
+      }
+    });
+    setTodayTotals(sums);
+  }, []);
+
+  useEffect(() => { fetchToday(); }, [fetchToday]);
+
+  // ── Ο εβδομαδιαίος πίνακας, ομαδοποιημένος ανά ημέρα ─────────────────────
+  // `entry_date` και όχι `created_at`: είναι η ημέρα ΤΗΝ ΟΠΟΙΑ ΑΦΟΡΑ η δήλωση
+  // (for_date / spent_on). Ένας διανομέας που δηλώνει τα χθεσινά του στις 01:30
+  // πρέπει να μετρήσει στη χθεσινή ημέρα, όχι στη σημερινή.
+  const days = (() => {
+    const map = new Map();
+    rows.forEach((r) => {
+      const key = r.entry_date;
+      if (!map.has(key)) map.set(key, { key, rows: [], cash: 0, fuel: 0, topup: 0 });
+      const g = map.get(key);
+      g.rows.push(r);
+      g[r.kind] = (g[r.kind] || 0) + Number(r.amount || 0);
+    });
+    return [...map.values()].sort((a, b) => (a.key < b.key ? 1 : -1));
+  })();
+
   // ── Φρεσκάρισμα μόλις ξαναγίνει ορατή η καρτέλα (αίτημα πελάτη 06/09/2026) ──
   // Η οθόνη του ταμείου έμενε ανοιχτή για ώρες και έδειχνε ό,τι είχε φορτώσει
   // κατά το άνοιγμα — στο μεταξύ οι διανομείς είχαν δηλώσει POS και βενζίνες από
   // το κιόσκ. Ίδιο μοτίβο με τον ζωντανό χάρτη: το onWake χτυπά σε
   // visibilitychange / focus / online / επιστροφή από bfcache, με throttle 3''.
   useEffect(
-    () => onWake(() => { fetchHistory(); fetchPending(); fetchSettled(); }),
-    [fetchHistory, fetchPending, fetchSettled],
+    () => onWake(() => { fetchHistory(); fetchPending(); fetchSettled(); fetchToday(); }),
+    [fetchHistory, fetchPending, fetchSettled, fetchToday],
   );
 
   async function undoSettled(s) {
@@ -279,6 +332,51 @@ export default function CashFloat() {
           <div className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>{eur(threshold)} €</div>
         </motion.div>
       </div>
+
+      {/* ── Σύνολο ημέρας (αίτημα πελάτη 06/09/2026) ─────────────────────── */}
+      {/* Δύο νούμερα που ο διαχειριστής τα ρωτούσε κάθε βράδυ: πόσα βγήκαν
+          σήμερα σε POS και πόσα σε βενζίνες. Αφορούν ΠΑΝΤΑ τη σημερινή ημέρα,
+          ανεξάρτητα από την εβδομάδα που δείχνει ο πίνακας παρακάτω. */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-5 card-surface" style={card}>
+          <div className="flex items-center gap-2 mb-2">
+            <Wallet size={16} style={{ color: 'var(--accent)' }} />
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              POS σήμερα
+            </span>
+          </div>
+          <div className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>{eur(todayTotals.cash)} €</div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
+          className="p-5 card-surface" style={card}>
+          <div className="flex items-center gap-2 mb-2">
+            <Fuel size={16} style={{ color: 'var(--warning)' }} />
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Βενζίνες σήμερα
+            </span>
+          </div>
+          <div className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>{eur(todayTotals.fuel)} €</div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+          className="p-5 card-surface hidden lg:block" style={card}>
+          <div className="flex items-center gap-2 mb-2">
+            <CircleDollarSign size={16} style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Σύνολο ημέρας
+            </span>
+          </div>
+          <div className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>
+            {eur(todayTotals.cash + todayTotals.fuel)} €
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {todayTotals.count === 1 ? '1 δήλωση' : `${todayTotals.count} δηλώσεις`}
+          </p>
+        </motion.div>
+      </div>
+
+      <DriverTotals />
 
       {/* ── Ρυθμίσεις ────────────────────────────────────────────────────── */}
       {showSettings && (
@@ -453,49 +551,237 @@ export default function CashFloat() {
                 ))}
               </tr>
             </thead>
+            {/* Οι καταστάσεις «φόρτωση» και «κενό» σε ΔΙΚΟ ΤΟΥΣ tbody: από κάτω
+                κάθε ημέρα φτιάχνει το δικό της, και ένα tbody μέσα σε tbody δεν
+                είναι έγκυρη HTML — ο browser θα το ξήλωνε με απρόβλεπτο τρόπο. */}
+            {(loading || rows.length === 0) && (
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</td></tr>
+                ) : (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                    Καμία κίνηση ταμείου αυτή την εβδομάδα.
+                  </td></tr>
+                )}
+              </tbody>
+            )}
+            {!loading && days.map((day) => (
+                // Ένα <tbody> ανά ημέρα: έγκυρη HTML, και δίνει στο πρόγραμμα
+                // ανάγνωσης οθόνης πραγματική ομαδοποίηση αντί για μια σούπα
+                // γραμμών. Η κεφαλίδα της ημέρας κρατά τα υποσύνολα.
+                <tbody key={day.key}>
+                  <tr style={{ backgroundColor: 'var(--bg-tertiary)', borderTop: '2px solid var(--border-default)' }}>
+                    <td colSpan={2} className="px-4 py-2 font-bold text-xs uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                      {prettyDay(day.key)}
+                    </td>
+                    <td colSpan={4} className="px-4 py-2">
+                      {/* Υποσύνολα ημέρας — αυτό ακριβώς ρωτούσε ο διαχειριστής
+                          κάθε βράδυ: «πόσα POS και πόσες βενζίνες σήμερα;» */}
+                      <div className="flex flex-wrap gap-3 text-[11px] font-bold tabular-nums">
+                        {day.cash > 0 && (
+                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                            <Wallet size={11} /> POS {eur(day.cash)} €
+                          </span>
+                        )}
+                        {day.fuel > 0 && (
+                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--warning)' }}>
+                            <Fuel size={11} /> Βενζίνες {eur(day.fuel)} €
+                          </span>
+                        )}
+                        {day.topup > 0 && (
+                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                            <PlusCircle size={11} /> Ανεφοδιασμός {eur(day.topup)} €
+                          </span>
+                        )}
+                        {(day.cash > 0 || day.fuel > 0) && (
+                          <span style={{ color: 'var(--text-primary)' }}>
+                            Σύνολο ημέρας {eur(day.cash + day.fuel)} €
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {day.rows.map((r) => {
+                  const kind = LEDGER_KINDS[r.kind] || LEDGER_KINDS.cash;
+                  return (
+                  <tr key={`${r.kind}-${r.id}`} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap" style={kind.badge}>
+                        <kind.Icon size={12} /> {kind.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {r.driver_name ? (
+                        <span className="flex items-center gap-1.5"><User size={13} style={{ color: 'var(--text-muted)' }} /> {r.driver_name}</span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 font-bold" style={{ color: kind.amountColor }}>
+                      {kind.sign}{eur(r.amount)} €
+                    </td>
+                    <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{prettyDateTime(r.created_at)}</td>
+                    <td className="px-4 py-3 truncate max-w-[220px]" style={{ color: 'var(--text-secondary)' }} title={r.note || ''}>
+                      {r.note || '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.original_amount != null && (
+                        <span title={`Αρχικό ποσό: ${eur(r.original_amount)} € — διορθώθηκε ${prettyDateTime(r.edited_at)}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap"
+                          style={{ color: 'var(--warning)', backgroundColor: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
+                          <AlertTriangle size={11} />
+                          <span className="line-through">{eur(r.original_amount)}€</span> → {eur(r.amount)}€
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  );
+                  })}
+                </tbody>
+              ))}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Σύνολα ανά διανομέα (αίτημα πελάτη 06/09/2026)
+// ════════════════════════════════════════════════════════════════════════════
+// «Θα ήθελε να βλέπει ότι ο Ιορδάνης Τσουτσούλης σήμερα δήλωσε συνολικά τόσα,
+// τον μήνα τόσα.» Ένας πίνακας, ένας επιλογέας περιόδου — τα ίδια έτοιμα
+// διαστήματα με τα Στατιστικά, ώστε να μη χρειάζεται να μάθει δύο συστήματα.
+//
+// ΞΑΝΑΧΡΗΣΙΜΟΠΟΙΕΙ το admin_cash_ledger_history αντί για νέο RPC: επιστρέφει
+// ήδη kind + driver_name + amount για οποιοδήποτε διάστημα, και η άθροιση σε
+// ~30 διανομείς × λίγες εκατοντάδες γραμμές είναι ασήμαντη δουλειά για τον
+// browser. Ένα καινούργιο RPC θα ήταν μία ακόμη migration για μηδέν κέρδος.
+const DRIVER_PERIODS = [
+  { id: 'today', label: 'Σήμερα',       days: 1 },
+  { id: 'd2',    label: '2 ημέρες',     days: 2 },
+  { id: 'd3',    label: '3 ημέρες',     days: 3 },
+  { id: 'd7',    label: '7 ημέρες',     days: 7 },
+  { id: 'd30',   label: '30 ημέρες',    days: 30 },
+  { id: 'month', label: 'Τρέχων μήνας', month: true },
+];
+
+function DriverTotals() {
+  const [periodId, setPeriodId] = useState('today');
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const period = DRIVER_PERIODS.find((p) => p.id === periodId) || DRIVER_PERIODS[0];
+
+  const fetchTotals = useCallback(async () => {
+    const now = new Date();
+    const from = new Date(now);
+    if (period.month) from.setDate(1);
+    else from.setDate(now.getDate() - (period.days - 1));
+
+    setLoading(true);
+    const { data, error } = await supabase.rpc('admin_cash_ledger_history', {
+      p_from: ymd(from), p_to: ymd(now),
+    });
+    setLoading(false);
+    if (error) { toast.error('Σφάλμα ανάκτησης συνόλων: ' + error.message); setRows([]); return; }
+
+    // Οι ανεφοδιασμοί (`topup`) ΔΕΝ έχουν διανομέα — είναι λεφτά που μπαίνουν
+    // στο κουτί από τη διαχείριση. Ένα `driver_name` null θα γινόταν γραμμή
+    // «—» με άθροισμα που δεν σημαίνει τίποτα εδώ.
+    const map = new Map();
+    (data || []).forEach((r) => {
+      if (r.kind !== 'cash' && r.kind !== 'fuel') return;
+      const name = r.driver_name || 'Άγνωστος';
+      if (!map.has(name)) map.set(name, { name, cash: 0, fuel: 0, count: 0 });
+      const g = map.get(name);
+      g[r.kind] += Number(r.amount || 0);
+      g.count += 1;
+    });
+
+    setRows([...map.values()].sort((a, b) => (b.cash + b.fuel) - (a.cash + a.fuel)));
+  }, [period]);
+
+  useEffect(() => { fetchTotals(); }, [fetchTotals]);
+  useEffect(() => onWake(fetchTotals), [fetchTotals]);
+
+  const totals = rows.reduce(
+    (acc, r) => ({ cash: acc.cash + r.cash, fuel: acc.fuel + r.fuel }),
+    { cash: 0, fuel: 0 },
+  );
+
+  return (
+    <div className="mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 className="font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          <User size={18} /> Σύνολα ανά διανομέα
+        </h3>
+        <button onClick={fetchTotals} disabled={loading}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+          style={subtleBtn}>
+          <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} /> Ανανέωση
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-3">
+        {DRIVER_PERIODS.map((p) => (
+          <button key={p.id} onClick={() => setPeriodId(p.id)} disabled={loading}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-50"
+            style={p.id === periodId
+              ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff' }
+              : { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={card} className="overflow-hidden card-surface">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: 480 }}>
+            <thead>
+              <tr style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-left" style={{ color: 'var(--text-secondary)' }}>
+                  Διανομέας
+                </th>
+                {['POS', 'Βενζίνη', 'Σύνολο'].map((h) => (
+                  <th key={h} className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right" style={{ color: 'var(--text-secondary)' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</td></tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Φόρτωση…</td></tr>
               )}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
-                  Καμία κίνηση ταμείου αυτή την εβδομάδα.
+                <tr><td colSpan={4} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                  Καμία δήλωση σε αυτό το διάστημα.
                 </td></tr>
               )}
-              {!loading && rows.map((r) => {
-                const kind = LEDGER_KINDS[r.kind] || LEDGER_KINDS.cash;
-                return (
-                <tr key={`${r.kind}-${r.id}`} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap" style={kind.badge}>
-                      <kind.Icon size={12} /> {kind.label}
+              {!loading && rows.map((r) => (
+                <tr key={r.name} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    <span className="flex items-center gap-1.5">
+                      <User size={13} style={{ color: 'var(--text-muted)' }} /> {r.name}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {r.driver_name ? (
-                      <span className="flex items-center gap-1.5"><User size={13} style={{ color: 'var(--text-muted)' }} /> {r.driver_name}</span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3 font-bold" style={{ color: kind.amountColor }}>
-                    {kind.sign}{eur(r.amount)} €
-                  </td>
-                  <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{prettyDateTime(r.created_at)}</td>
-                  <td className="px-4 py-3 truncate max-w-[220px]" style={{ color: 'var(--text-secondary)' }} title={r.note || ''}>
-                    {r.note || '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {r.original_amount != null && (
-                      <span title={`Αρχικό ποσό: ${eur(r.original_amount)} € — διορθώθηκε ${prettyDateTime(r.edited_at)}`}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap"
-                        style={{ color: 'var(--warning)', backgroundColor: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
-                        <AlertTriangle size={11} />
-                        <span className="line-through">{eur(r.original_amount)}€</span> → {eur(r.amount)}€
-                      </span>
-                    )}
+                  <td className="px-4 py-3 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{eur(r.cash)} €</td>
+                  <td className="px-4 py-3 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{eur(r.fuel)} €</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                    {eur(r.cash + r.fuel)} €
                   </td>
                 </tr>
-                );
-              })}
+              ))}
+              {!loading && rows.length > 0 && (
+                <tr style={{ borderTop: '2px solid var(--border-default)', backgroundColor: 'var(--bg-tertiary)' }}>
+                  <td className="px-4 py-3 font-black" style={{ color: 'var(--text-primary)' }}>Σύνολο</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>{eur(totals.cash)} €</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>{eur(totals.fuel)} €</td>
+                  <td className="px-4 py-3 text-right font-black tabular-nums" style={{ color: 'var(--accent)' }}>
+                    {eur(totals.cash + totals.fuel)} €
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
