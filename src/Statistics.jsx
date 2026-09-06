@@ -28,6 +28,14 @@ export default function Statistics() {
   const [storesList, setStoresList] = useState([]);
   const [driversList, setDriversList] = useState([]);
 
+  // ── Ώρες λειτουργίας, για τον ρυθμό «παραγγελίες ανά ώρα» ─────────────────
+  // Αίτημα πελάτη 06/09/2026. Ο διαιρέτης ΔΕΝ είναι καρφωμένο 18: διαβάζεται από
+  // τις ίδιες ρυθμίσεις που ορίζουν το ωράριο στο πρόγραμμα εβδομάδας
+  // (schedule_settings, migration 0015) — open_hour 7 → close_hour 25 = 18 ώρες.
+  // Αν αύριο η εταιρία ανοίξει νωρίτερα, ο ρυθμός διορθώνεται μόνος του αντί να
+  // ψευτίζει σιωπηλά.
+  const [activeHours, setActiveHours] = useState(18);
+
   // Επιλεγμένα Φίλτρα
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
@@ -50,16 +58,30 @@ export default function Statistics() {
 
   const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
+  // Το διάστημα ΤΩΝ ΔΕΔΟΜΕΝΩΝ ΠΟΥ ΔΕΙΧΝΟΝΤΑΙ — όχι ό,τι γράφει αυτή τη στιγμή
+  // στα πεδία. Χωρίς αυτό, μόλις ο διαχειριστής άλλαζε ημερομηνία (πριν πατήσει
+  // «Ανανέωση») ο ρυθμός ανά ώρα θα διαιρούσε παλιές παραγγελίες με νέες ημέρες.
+  const [appliedRange, setAppliedRange] = useState({
+    start: formatDateTimeLocal(startOfToday),
+    end: formatDateTimeLocal(today),
+  });
 
   useEffect(() => {
     const fetchFilters = async () => {
-      const [storesRes, driversRes] = await Promise.all([
+      const [storesRes, driversRes, hoursRes] = await Promise.all([
         supabase.from('stores').select('id, name').order('name'),
-        supabase.from('drivers').select('id, full_name').order('full_name')
+        supabase.from('drivers').select('id, full_name').order('full_name'),
+        supabase.from('schedule_settings').select('open_hour, close_hour').maybeSingle(),
       ]);
-      
+
       if (storesRes.data) setStoresList(storesRes.data);
       if (driversRes.data) setDriversList(driversRes.data);
+
+      // Το close_hour ζει σε 24ωρα «από τα μεσάνυχτα της ίδιας ημέρας»: το 25
+      // σημαίνει 01:00 της επόμενης. Άρα η αφαίρεση δίνει σωστά 18 και δεν
+      // χρειάζεται ειδικός χειρισμός για το νυχτερινό ωράριο.
+      const span = Number(hoursRes.data?.close_hour) - Number(hoursRes.data?.open_hour);
+      if (Number.isFinite(span) && span > 0 && span <= 24) setActiveHours(span);
     };
     
     fetchFilters();
@@ -76,6 +98,7 @@ export default function Statistics() {
 
     const startIso = new Date(startDate).toISOString();
     const endIso = new Date(endDate).toISOString();
+    setAppliedRange({ start: startDate, end: endDate });
 
     // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό.
     // stores!inner (αντί για stores ( )): client feedback 08/08 — τρίτο φίλτρο
@@ -140,8 +163,13 @@ export default function Statistics() {
       if (order.created_at && order.completed_at) {
         const tCreate = new Date(order.created_at);
         const tComplete = new Date(order.completed_at);
-        const mins = Math.floor((tComplete - tCreate) / 60000);
-        
+        // ΧΩΡΙΣ Math.floor ΑΝΑ ΠΑΡΑΓΓΕΛΙΑ (διόρθωση 06/09/2026): το κόψιμο των
+        // δευτερολέπτων σε κάθε γραμμή έριχνε τον μέσο όρο έως και 30
+        // δευτερόλεπτα — σε 500 παραγγελίες αυτό είναι μισό λεπτό λάθος που ο
+        // πελάτης το έβλεπε ως «ο μέσος χρόνος δεν είναι σωστός». Η
+        // στρογγυλοποίηση γίνεται ΜΙΑ φορά, στο τέλος, στο ένα δεκαδικό.
+        const mins = (tComplete - tCreate) / 60000;
+
         totalMins += mins;
         validOrdersForTime += 1;
 
@@ -162,6 +190,23 @@ export default function Statistics() {
   };
 
   const kpis = calculateKPIs();
+
+  // ── Ρυθμός: παραγγελίες ανά ώρα λειτουργίας (αίτημα πελάτη 06/09/2026) ────
+  // Ο τύπος όπως τον όρισε: παραγγελίες ÷ ημέρες διαστήματος ÷ ώρες λειτουργίας.
+  //
+  // Οι ημέρες μετριούνται στο ΕΠΙΛΕΓΜΕΝΟ ΔΙΑΣΤΗΜΑ («10 μέρες πίσω» = 10) και όχι
+  // «όσες ημέρες είχαν παραγγελίες» — αλλιώς μια κλειστή αργία θα ανέβαζε
+  // τεχνητά τον ρυθμό αντί να τον ρίξει.
+  //
+  // Στρογγυλοποίηση ΠΡΟΣ ΤΑ ΠΑΝΩ με ελάχιστο το 1: το προεπιλεγμένο διάστημα
+  // είναι «σήμερα από τα μεσάνυχτα ως τώρα», δηλαδή κλάσμα ημέρας — χωρίς το
+  // ceil θα διαιρούσαμε με 0,4 και ο ρυθμός θα διπλασιαζόταν.
+  const rangeDays = (() => {
+    const ms = new Date(appliedRange.end) - new Date(appliedRange.start);
+    if (!Number.isFinite(ms) || ms <= 0) return 1;
+    return Math.max(1, Math.ceil(ms / 86400000));
+  })();
+  const ordersPerHour = kpis.totalOrders / rangeDays / activeHours;
 
   // Τα KPI υπολογίζονται πάντα σε ΟΛΕΣ τις παραγγελίες· μόνο ο πίνακας κόβεται.
   const historyRows = orders.slice(0, visibleRows);
@@ -296,7 +341,7 @@ export default function Statistics() {
       ) : orders.length > 0 ? (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="animate-fade-in">
           {/* Κάρτες KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
             <div className="p-6 card-glass backdrop-blur-md border border-[#38EF7D]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col items-center hover:-translate-y-1 transition-transform">
               <div className="flex items-center justify-center gap-2 mb-2 text-[#38EF7D] drop-shadow-[0_0_5px_rgba(56,239,125,0.5)] relative z-10">
                 <Clock size={20} />
@@ -312,6 +357,19 @@ export default function Statistics() {
               </div>
               <p className="m-0 text-4xl font-black text-adaptive-light relative z-10">{kpis.totalOrders}</p>
               <small className="text-adaptive block mt-2 font-medium relative z-10">Ολοκληρωμένες στο διάστημα</small>
+            </div>
+            <div className="p-6 card-glass backdrop-blur-md border border-[#C5A066]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col items-center hover:-translate-y-1 transition-transform">
+              <div className="flex items-center justify-center gap-2 mb-2 text-[#C5A066] drop-shadow-[0_0_5px_rgba(197,160,102,0.5)] relative z-10">
+                <TrendingUp size={20} />
+                <h3 className="m-0 text-base font-bold">Παραγγελίες ανά Ώρα</h3>
+              </div>
+              <p className="m-0 text-4xl font-black text-adaptive-light relative z-10">{ordersPerHour.toFixed(2)}</p>
+              <small
+                className="text-adaptive block mt-2 font-medium relative z-10"
+                title={`${kpis.totalOrders} παραγγελίες ÷ ${rangeDays} ${rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ ${activeHours} ώρες λειτουργίας`}
+              >
+                {kpis.totalOrders} ÷ {rangeDays} {rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ {activeHours} ώρες
+              </small>
             </div>
           </div>
 
