@@ -7,21 +7,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import StoreInbox from './StoreInbox';
 import { useBackClose } from './backNav';
-
-// Σύγκριση ονομάτων χωρίς να χρειάζεται ο διαχειριστής να πετύχει τόνους και
-// πεζά/κεφαλαία: «παπαδοπουλος» βρίσκει το «Παπαδόπουλος».
-//
-// Το NFD σπάει κάθε τονισμένο γράμμα σε γράμμα + τόνο και το regex πετάει τους
-// τόνους. Το τελικό σίγμα μπαίνει χωριστά γιατί ΔΕΝ είναι θέμα τόνου: το «ς»
-// και το «σ» είναι δύο διαφορετικοί χαρακτήρες, και κανείς δεν πληκτρολογεί
-// τελικό σίγμα στη μέση μιας αναζήτησης.
-const norm = (s) =>
-  (s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/ς/g, 'σ')
-    .toLowerCase()
-    .trim();
+import { norm } from './searchText';
 
 /** Καταστήματα έχουν `name`, διανομείς `full_name` — μία θέση να το ξέρει. */
 const labelOf = (entity) => entity.name || entity.full_name || '';

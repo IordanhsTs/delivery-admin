@@ -4,6 +4,7 @@ import { invokeWithAuthRetry, pushFailureReason } from './pushErrors';
 import { PlusCircle, Store, MapPin, MessageSquare, Rocket, Send, Bike } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import SearchableSelect from './SearchableSelect';
 
 export default function CreateOrder() {
   const [stores, setStores] = useState([]);
@@ -124,35 +125,25 @@ export default function CreateOrder() {
           {/* Επιλογή Καταστήματος */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[#C5A066] font-bold text-sm flex items-center gap-2"><Store size={16} /> Επιλογή Καταστήματος</label>
-            <select
+            <SearchableSelect
               value={selectedStoreId}
-              onChange={(e) => setSelectedStoreId(e.target.value)}
-              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light font-medium transition-colors cursor-pointer"
-            >
-              <option value="">-- Επιλέξτε Κατάστημα --</option>
-              {stores.map(store => (
-                <option key={store.id} value={store.id}>
-                  {store.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedStoreId}
+              options={stores.map(store => ({ value: store.id, label: store.name }))}
+              emptyLabel="-- Επιλέξτε Κατάστημα --"
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light font-medium transition-colors"
+            />
           </div>
 
           {/* Επιλογή Διανομέα (Απευθείας Ανάθεση) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[#C5A066] font-bold text-sm flex items-center gap-2"><Bike size={16} /> Απευθείας Ανάθεση (Προαιρετικό)</label>
-            <select
+            <SearchableSelect
               value={selectedDriverId}
-              onChange={(e) => setSelectedDriverId(e.target.value)}
-              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light font-medium transition-colors cursor-pointer"
-            >
-              <option value="">-- Χωρίς Απευθείας Ανάθεση (Προς όλους) --</option>
-              {drivers.map(driver => (
-                <option key={driver.id} value={driver.id}>
-                  {driver.full_name}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedDriverId}
+              options={drivers.map(driver => ({ value: driver.id, label: driver.full_name }))}
+              emptyLabel="-- Χωρίς Απευθείας Ανάθεση (Προς όλους) --"
+              className="p-3 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light font-medium transition-colors"
+            />
           </div>
 
           {/* Διεύθυνση Παράδοσης */}
