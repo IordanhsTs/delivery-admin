@@ -249,20 +249,31 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
           <span className="font-bold text-[var(--map-green)] block text-[10px] uppercase tracking-wider mb-1">
             Σε διανομή ({driverActiveOrders.length}):
           </span>
+          {/* ΔΥΟ ΓΡΑΜΜΕΣ ΑΝΑ ΠΑΡΑΓΓΕΛΙΑ, ΧΩΡΙΣ ΚΟΨΙΜΟ (αίτημα πελάτη 06/09/2026):
+              πριν, κατάστημα και διεύθυνση ήταν σε μία γραμμή με `truncate
+              max-w-[80px]` — στο κινητό ο διαχειριστής διάβαζε «Προξένου Κορ…»
+              και δεν μάθαινε ποτέ πού πάει ο διανομέας. Η καρτέλα μεγαλώνει
+              όσο χρειάζεται· το πλάτος το φρενάρει μόνο η οθόνη (βλ. maxWidth
+              στο tooltip παρακάτω). */}
           {driverActiveOrders.map(order => {
             const { acceptedMins } = orderDurations(order, currentTime);
             return (
-              <div key={order.id} className="text-[11px] text-white flex items-center gap-1 mb-0.5 whitespace-nowrap">
-                <Building size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.stores?.name}</span>
-                <span className="text-slate-400 mx-0.5">➔</span>
-                <MapPin size={10} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[80px]">{order.address}</span>
-                <span
-                  className="flex items-center gap-0.5 shrink-0 font-bold ml-0.5"
-                  style={{ color: 'var(--map-green)' }}
-                  title="Χρόνος από την αποδοχή της παραγγελίας"
-                >
-                  <Clock size={10} /> {acceptedMins}′
-                </span>
+              <div key={order.id} className="text-[11px] text-white mb-1.5 last:mb-0">
+                <div className="flex items-start gap-1">
+                  <Building size={10} className="text-slate-400 shrink-0 mt-[3px]" />
+                  <span className="break-words">{order.stores?.name}</span>
+                </div>
+                <div className="flex items-start gap-1">
+                  <MapPin size={10} className="text-slate-400 shrink-0 mt-[3px]" />
+                  <span className="break-words flex-1">{order.address}</span>
+                  <span
+                    className="flex items-center gap-0.5 shrink-0 font-bold"
+                    style={{ color: 'var(--map-green)' }}
+                    title="Χρόνος από την αποδοχή της παραγγελίας"
+                  >
+                    <Clock size={10} /> {acceptedMins}′
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -324,6 +335,11 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
               boxShadow: '0 4px 20px rgba(0,0,0,0.8)', padding: '8px 12px', backdropFilter: 'blur(10px)',
               zIndex: 20,
               opacity: openDriverId === driver.id ? 1 : undefined,
+              // Μεγαλώνει με το περιεχόμενο (`max-content`) αλλά δεν βγαίνει ποτέ
+              // έξω από την οθόνη του κινητού. Τα 300px χωράνε ολόκληρη ελληνική
+              // διεύθυνση με αριθμό σε δύο γραμμές.
+              width: 'max-content',
+              maxWidth: 'min(78vw, 300px)',
             }}
           >
             <div className="leading-relaxed min-w-[120px]">
@@ -756,7 +772,10 @@ export default function LiveMap({ navHidden = false }) {
     const valid = data.filter(o => o.accepted_at && o.completed_at);
     if (valid.length === 0) { setAvgDeliveryToday(null); return; }
     const totalMins = valid.reduce((acc, o) => acc + (new Date(o.completed_at) - new Date(o.accepted_at)) / 60000, 0);
-    setAvgDeliveryToday(Math.round(totalMins / valid.length));
+    // ΕΝΑ ΔΕΚΑΔΙΚΟ, ΟΧΙ ΣΤΡΟΓΓΥΛΟΠΟΙΗΣΗ ΣΕ ΑΚΕΡΑΙΟ (αίτημα πελάτη 06/09/2026):
+    // το «10 λ.» έκρυβε τη διαφορά ανάμεσα σε 9,5 και 10,4. Το 9,6 διαβάζεται ως
+    // «9 λεπτά και ~36 δευτερόλεπτα» και είναι το νούμερο που ζητήθηκε ρητά.
+    setAvgDeliveryToday(totalMins / valid.length);
   };
 
   // Δίχτυ ασφαλείας πάνω από το realtime: αν η καρτέλα μείνει ανενεργή πολλή ώρα
@@ -1386,15 +1405,19 @@ export default function LiveMap({ navHidden = false }) {
                     className="rounded-lg px-2.5 py-2 mb-2 last:mb-0 text-[13px]"
                     style={railCardStyle('var(--success)')}
                   >
-                    {/* Ζευγάρι: κατάστημα → διεύθυνση (βασική πληροφορία, πρώτη στην ιεραρχία) */}
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    {/* Ζευγάρι: κατάστημα → διεύθυνση (βασική πληροφορία, πρώτη στην ιεραρχία).
+                        ΤΥΛΙΓΕΤΑΙ, ΔΕΝ ΚΟΒΕΤΑΙ (αίτημα πελάτη 06/09/2026): το παλιό
+                        `truncate` έδειχνε «Προξένου Κορ…» στο κινητό, δηλαδή έκρυβε
+                        ακριβώς την πληροφορία για την οποία ανοίγει κανείς τη λίστα.
+                        Ίδια συμπεριφορά με τη λίστα «Ενεργές» από πάνω. */}
+                    <div className="flex items-start gap-1.5 min-w-0">
                       <OrderNumber n={idx + 1} />
-                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0 flex-1 leading-relaxed">
                         <Building size={11} className="shrink-0" style={{ color: 'var(--text-muted)', opacity: 0.6 }} />
-                        <span className="font-extrabold shrink-0" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
+                        <span className="font-extrabold" style={{ color: 'var(--text-primary)' }}>{order.stores?.name}</span>
                         <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>➔</span>
                         <MapPin size={11} className="shrink-0" style={{ color: 'var(--text-muted)', opacity: 0.6 }} />
-                        <span className="truncate" style={{ color: 'var(--text-secondary)' }} title={order.address}>{order.address}</span>
+                        <span className="break-words" style={{ color: 'var(--text-secondary)' }}>{order.address}</span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <DistanceChip order={order} />
@@ -1423,7 +1446,7 @@ export default function LiveMap({ navHidden = false }) {
                     {/* Διανομέας */}
                     <div className="flex items-center gap-1.5 min-w-0 mt-1.5">
                       <User size={12} className="shrink-0" style={{ color: 'var(--success)' }} />
-                      <span className="font-semibold truncate text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{order.drivers?.full_name}</span>
+                      <span className="font-semibold break-words text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{order.drivers?.full_name}</span>
                     </div>
 
                     {/* 3 κουτάκια κατάστασης (client feedback 08/08): πορτοκαλί=Ενεργή
@@ -1557,12 +1580,16 @@ export default function LiveMap({ navHidden = false }) {
 
               <StatTile
                 Icon={Timer}
-                value={avgDeliveryToday !== null ? `${avgDeliveryToday} λ.` : '—'}
+                value={avgDeliveryToday !== null ? `${avgDeliveryToday.toFixed(1)} λ.` : '—'}
                 label="Μ.Ο. χρόνος"
                 tint="var(--info)"
                 bg="var(--info-bg)"
                 border="var(--info-border)"
-                title="Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες"
+                title={avgDeliveryToday !== null
+                  ? `Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες`
+                    + ` — ${avgDeliveryToday.toFixed(1)} λεπτά, δηλαδή ${Math.floor(avgDeliveryToday)} λ.`
+                    + ` και ${Math.round((avgDeliveryToday % 1) * 60)} δευτ.`
+                  : 'Μέσος χρόνος από την ανάθεση μέχρι την ολοκλήρωση, για τις σημερινές παραγγελίες'}
               />
 
               <StatTile
@@ -1722,9 +1749,37 @@ export default function LiveMap({ navHidden = false }) {
 const START_HOUR = 7;  // πρωί
 const END_HOUR = 23;   // η μπάρα 23:00 καλύπτει 23:00–00:00 (μεσάνυχτα)
 
+// Πλάτος της αριστερής λωρίδας με τα νούμερα του άξονα y. Τα 22px χωράνε
+// τριψήφιο («120») στα 9px χωρίς να φάνε αισθητό πλάτος από τις 17 μπάρες.
+const Y_AXIS_W = 22;
+
+/**
+ * «Στρογγυλός» άξονας y: επιστρέφει την κορυφή της κλίμακας και τις τιμές των
+ * γραμμών. Με μέγιστο 65 δίνει 20 · 40 · 60 · 80 — ακριβώς αυτό που ζήτησε ο
+ * πελάτης (06/09/2026), όχι το ωμό μέγιστο της ημέρας.
+ *
+ * Το βήμα διαλέγεται από το 1/2/2.5/5/10 της κατάλληλης τάξης μεγέθους, ώστε ο
+ * ίδιος κώδικας να διαβάζεται σωστά και σε ήσυχη Δευτέρα με μέγιστο 3 (1 · 2 · 3)
+ * και σε Παρασκευή βράδυ με 70.
+ */
+function niceScale(max, targetSteps = 4) {
+  if (!(max > 0)) return { top: 0, ticks: [] };
+  const raw = max / targetSteps;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+  const top = Math.ceil(max / step) * step;
+  const ticks = [];
+  // Το 1e-9 καλύπτει τη συσσώρευση σφάλματος κινητής υποδιαστολής όταν το βήμα
+  // είναι δεκαδικό (π.χ. 2.5) — χωρίς αυτό χάνεται η τελευταία γραμμή.
+  for (let v = step; v <= top + 1e-9; v += step) ticks.push(Number(v.toFixed(4)));
+  return { top, ticks };
+}
+
 // Ζει στην κάρτα κάτω δεξιά (πλάτος 340px), οπότε είναι σφιχτό: χαμηλές μπάρες
-// και καμία τιμή πάνω από τις μπάρες — 17 νούμερα δεν χωρούν. Οι ακριβείς τιμές
-// μένουν διαθέσιμες στο tooltip κάθε μπάρας.
+// και καμία τιμή πάνω από τις μπάρες — 17 νούμερα δεν χωρούν. Η κλίμακα
+// διαβάζεται από τον άξονα y αριστερά, και η ακριβής τιμή μιας ώρας με hover
+// (υπολογιστής) ή με ΑΓΓΙΓΜΑ στη μπάρα (κινητό).
 // Ο άξονας ωρών ζει σε ξεχωριστή γραμμή κάτω από τις μπάρες: έτσι το πλάτος της
 // ετικέτας δεν επηρεάζει το ύψος/πλάτος της μπάρας και μπορεί να είναι αναγνώσιμη
 // (10px, ανά 4 ώρες, μορφή «07:00»). Η τρέχουσα ώρα δεν παίρνει δικό της νούμερο
@@ -1732,12 +1787,18 @@ const END_HOUR = 23;   // η μπάρα 23:00 καλύπτει 23:00–00:00 (μ
 function WorkloadChart({ matrix, loading, isDark }) {
   const todayDow = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayDow);
+  // ΚΙΝΗΤΟ (αίτημα πελάτη 06/09/2026): στην οθόνη αφής δεν υπάρχει hover, οπότε
+  // το `title` της μπάρας ήταν αόρατο — ο διαχειριστής έβλεπε μόνο ορθές μπάρες
+  // χωρίς κανένα νούμερο. Το άγγιγμα κλειδώνει την ώρα και η τιμή γράφεται στην
+  // κεφαλίδα του γραφήματος. Ξαναπάτημα στην ίδια μπάρα την ξεκλειδώνει.
+  const [pickedHour, setPickedHour] = useState(null);
 
   const hours = [];
   for (let h = START_HOUR; h <= END_HOUR; h++) hours.push(h);
 
   const dayData = (matrix && matrix[selectedDay]) || {};
   const dayMax = Math.max(...hours.map(h => dayData[h] || 0), 0);
+  const scale = niceScale(dayMax);
   const currentHour = new Date().getHours();
 
   return (
@@ -1760,7 +1821,9 @@ function WorkloadChart({ matrix, loading, isDark }) {
           return (
             <button
               key={day}
-              onClick={() => setSelectedDay(day)}
+              // Η κλειδωμένη ώρα αφορά την ημέρα που ήταν επιλεγμένη — σε αλλαγή
+              // ημέρας θα έδειχνε τιμή άλλης στήλης.
+              onClick={() => { setSelectedDay(day); setPickedHour(null); }}
               className="flex-1 py-1 rounded-lg text-[11px] font-bold transition-all relative"
               style={{
                 background: isSel ? 'linear-gradient(135deg, var(--map-gold), var(--map-gold-deep))' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
@@ -1775,16 +1838,26 @@ function WorkloadChart({ matrix, loading, isDark }) {
         })}
       </div>
 
-      {/* Τίτλος ημέρας */}
-      <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-[13px] font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+      {/* Τίτλος ημέρας — και, όταν έχει επιλεγεί μπάρα, η τιμή της στη θέση του
+          badge «Σήμερα». Η γραμμή δεν αλλάζει ύψος, οπότε το γράφημα δεν πηδάει
+          κάθε φορά που ο διαχειριστής πατάει μια ώρα. */}
+      <div className="flex items-baseline gap-2 mb-2 min-h-[18px]">
+        <span className="text-[13px] font-bold shrink-0" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
           {DOW_FULL[selectedDay]}
         </span>
-        {selectedDay === todayDow && (
+        {pickedHour !== null ? (
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums truncate"
+            style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}
+          >
+            {String(pickedHour).padStart(2, '0')}:00–{String((pickedHour + 1) % 24).padStart(2, '0')}:00
+            {' · '}μ.ό. {fmtLoad(dayData[pickedHour] || 0)} παραγγελίες
+          </span>
+        ) : selectedDay === todayDow ? (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'var(--map-tint-green)', color: 'var(--map-green-deep)' }}>
             Σήμερα
           </span>
-        )}
+        ) : null}
       </div>
 
       {loading ? (
@@ -1797,59 +1870,104 @@ function WorkloadChart({ matrix, loading, isDark }) {
         </div>
       ) : (
         <>
-          {/* Μπάρες — κάθονται πάνω σε γραμμή βάσης, ώστε ο άξονας από κάτω να
-              διαβάζεται ως άξονας και όχι ως σκόρπια νούμερα. */}
-          <div
-            className="flex items-end justify-between gap-[3px] border-b"
-            style={{ height: 96, borderColor: 'var(--border-default)' }}
-          >
-            {hours.map(h => {
-              const val = dayData[h] || 0;
-              const pct = dayMax > 0 ? (val / dayMax) * 100 : 0;
-              const isNow = selectedDay === todayDow && h === currentHour;
-              return (
-                <div
-                  key={h}
-                  className="flex-1 min-w-0 flex items-end h-full"
-                  title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmtLoad(val)} παραγγελίες`}
+          {/* ΑΞΟΝΑΣ Y (αίτημα πελάτη 06/09/2026: «στον πίνακα y αριθμούς 20-40-60»).
+              Οι μπάρες μετριούνται πλέον πάνω στη ΣΤΡΟΓΓΥΛΗ κορυφή (scale.top) και
+              όχι στο ωμό μέγιστο της ημέρας — αλλιώς η ψηλότερη μπάρα θα άγγιζε
+              πάντα το ταβάνι και η κλίμακα δεν θα σήμαινε τίποτα.
+              Οι γραμμές είναι απόλυτα τοποθετημένες μέσα στην περιοχή σχεδίασης,
+              ώστε να μη μετακινούν τις μπάρες. */}
+          <div className="relative" style={{ height: 110 }}>
+            {/* Γραμμές πλέγματος + νούμερα, μία ανά τιμή του άξονα */}
+            {scale.ticks.map(t => (
+              <div
+                key={t}
+                className="absolute inset-x-0 flex items-center pointer-events-none"
+                // -0.5px: η γραμμή του 1px να κάθεται ΠΑΝΩ στην τιμή, όχι από κάτω.
+                style={{ bottom: `${(t / scale.top) * 100}%`, transform: 'translateY(50%)' }}
+              >
+                <span
+                  className="text-[9px] font-semibold tabular-nums text-right shrink-0 pr-1"
+                  style={{ width: Y_AXIS_W, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1 }}
                 >
-                  <div
-                    className="w-full rounded-t-[3px] transition-all duration-300"
-                    style={{
-                      height: `${Math.max(pct, val > 0 ? 4 : 0)}%`,
-                      minHeight: val > 0 ? 3 : 0,
-                      background: isNow
-                        ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
-                        : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
-                      boxShadow: isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
-                    }}
-                  />
-                </div>
-              );
-            })}
+                  {fmtLoad(t)}
+                </span>
+                <span className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+              </div>
+            ))}
+
+            {/* Μπάρες — κάθονται πάνω σε γραμμή βάσης, ώστε ο άξονας από κάτω να
+                διαβάζεται ως άξονας και όχι ως σκόρπια νούμερα. */}
+            <div
+              className="absolute inset-y-0 right-0 flex items-end justify-between gap-[3px] border-b"
+              style={{ left: Y_AXIS_W, borderColor: 'var(--border-default)' }}
+            >
+              {hours.map(h => {
+                const val = dayData[h] || 0;
+                const pct = scale.top > 0 ? (val / scale.top) * 100 : 0;
+                const isNow = selectedDay === todayDow && h === currentHour;
+                const isPicked = pickedHour === h;
+                return (
+                  <button
+                    key={h}
+                    type="button"
+                    // Κουμπί και όχι div: το άγγιγμα στο κινητό χρειάζεται στόχο —
+                    // ΟΛΟΚΛΗΡΗ η στήλη είναι πατητή, όχι μόνο το χρωματιστό κομμάτι,
+                    // αλλιώς οι χαμηλές ώρες θα ήταν ουσιαστικά άπιαστες.
+                    onClick={() => setPickedHour(prev => (prev === h ? null : h))}
+                    className="flex-1 min-w-0 flex items-end h-full cursor-pointer"
+                    title={`${DOW_FULL[selectedDay]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · μ.ό. ${fmtLoad(val)} παραγγελίες`}
+                    aria-label={`${String(h).padStart(2, '0')}:00, μέσος όρος ${fmtLoad(val)} παραγγελίες`}
+                  >
+                    <div
+                      className="w-full rounded-t-[3px] transition-all duration-300"
+                      style={{
+                        height: `${Math.max(pct, val > 0 ? 4 : 0)}%`,
+                        minHeight: val > 0 ? 3 : 0,
+                        background: isNow
+                          ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
+                          : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
+                        boxShadow: isPicked
+                          ? '0 0 0 1px var(--accent)'
+                          : isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
+                        // Η επιλεγμένη ξεχωρίζει σβήνοντας τις υπόλοιπες, όχι
+                        // βάφοντας τον εαυτό της: το πράσινο «τώρα» δεν χάνεται.
+                        opacity: pickedHour === null || isPicked ? 1 : 0.45,
+                      }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Άξονας ωρών: ετικέτα ανά 4 ώρες (07:00 · 11:00 · 15:00 · 19:00 · 23:00).
               Ζει σε δική της γραμμή, οπότε το πλάτος της ετικέτας δεν πειράζει τις
               μπάρες: ξεχειλίζει συμμετρικά πάνω στις κενές διπλανές στήλες και
               χωράει άνετα μέσα στο p-3 της κάρτας. Η τρέχουσα ώρα δεν παίρνει δικό
-              της νούμερο (θα στοίβαζε ετικέτες) αλλά πράσινη κουκκίδα. */}
-          <div className="flex justify-between gap-[3px] mt-1.5">
+              της νούμερο (θα στοίβαζε ετικέτες) αλλά πράσινη κουκκίδα.
+              Το ίδιο αριστερό περιθώριο με τις μπάρες, ώστε οι ετικέτες να μένουν
+              κάτω από τη στήλη τους. */}
+          <div className="flex justify-between gap-[3px] mt-1.5" style={{ marginLeft: Y_AXIS_W }}>
             {hours.map(h => {
               const isLabelled = (h - START_HOUR) % 4 === 0;
               const isNow = selectedDay === todayDow && h === currentHour;
+              const isPicked = pickedHour === h;
               return (
                 <div key={h} className="flex-1 min-w-0 flex items-center justify-center h-3">
-                  {isLabelled ? (
+                  {/* Η επιλεγμένη ώρα παίρνει ετικέτα ακόμη κι αν δεν είναι
+                      «κάθε 4η» — αλλιώς θα φαινόταν τονισμένη μπάρα χωρίς όνομα. */}
+                  {isLabelled || isPicked ? (
                     <span
                       className="text-[10px] font-semibold tabular-nums"
                       style={{
                         whiteSpace: 'nowrap',
                         // Σε light το --map-green-deep (#16a34a) πιάνει μόλις 3.3:1 πάνω
                         // σε λευκό — κάτω από το AA για 10px. Πιο βαθύ πράσινο εδώ (5.0:1).
-                        color: isNow
-                          ? (isDark ? 'var(--map-green)' : '#15803d')
-                          : (isDark ? '#94a3b8' : '#64748b'),
+                        color: isPicked
+                          ? 'var(--accent)'
+                          : isNow
+                            ? (isDark ? 'var(--map-green)' : '#15803d')
+                            : (isDark ? '#94a3b8' : '#64748b'),
                       }}
                     >
                       {String(h).padStart(2, '0')}:00
