@@ -11,6 +11,23 @@ import { fetchAllRows, PAGE_SIZE, HARD_CAP } from './fetchAll';
 // προσθέτει κάθε «φόρτωση περισσότερων».
 const HISTORY_PAGE = 200;
 import { STORE_CATEGORIES } from './storeCategories';
+import SearchableSelect from './SearchableSelect';
+
+// ── Έτοιμα διαστήματα (αίτημα πελάτη 06/09/2026) ────────────────────────────
+// «Όταν πάω στατιστικά να μου δείχνει τις ημέρες και μετά την επιλογή άμα θέλω
+// να αλλάξω». Δηλαδή: κουμπιά μπροστά, ημερομηνίες πίσω από «Προσαρμογή».
+//
+// Το `days: N` σημαίνει «οι τελευταίες N ημέρες, με σημερινή μέσα» — δηλαδή
+// από τα μεσάνυχτα της (σήμερα − N + 1) μέχρι τώρα. Έτσι το «7 ημέρες»
+// συμφωνεί με το πλήθος ημερών που χρησιμοποιεί ο ρυθμός παραγγελιών/ώρα.
+const PERIODS = [
+  { id: 'today', label: 'Σήμερα',        days: 1 },
+  { id: 'd2',    label: '2 ημέρες',      days: 2 },
+  { id: 'd3',    label: '3 ημέρες',      days: 3 },
+  { id: 'd7',    label: '7 ημέρες',      days: 7 },
+  { id: 'd30',   label: '30 ημέρες',     days: 30 },
+  { id: 'month', label: 'Τρέχων μήνας',  month: true },
+];
 
 export default function Statistics() {
   const [orders, setOrders] = useState([]);
@@ -66,6 +83,22 @@ export default function Statistics() {
     end: formatDateTimeLocal(today),
   });
 
+  // Ποιο έτοιμο διάστημα είναι πατημένο· null όταν ο διαχειριστής έγραψε δικές
+  // του ημερομηνίες. Ξεκινά στο «Σήμερα», που είναι και η προεπιλογή των πεδίων.
+  const [activePeriod, setActivePeriod] = useState('today');
+  const [showCustom, setShowCustom] = useState(false);
+
+  /** Το διάστημα ενός έτοιμου κουμπιού, σε μορφή που δέχονται τα πεδία. */
+  const rangeFor = (period) => {
+    const now = new Date();
+    const from = new Date(now);
+    if (period.month) from.setDate(1);
+    else from.setDate(now.getDate() - (period.days - 1));
+    from.setHours(0, 0, 0, 0);
+    return { start: formatDateTimeLocal(from), end: formatDateTimeLocal(now) };
+  };
+
+
   useEffect(() => {
     const fetchFilters = async () => {
       const [storesRes, driversRes, hoursRes] = await Promise.all([
@@ -89,16 +122,20 @@ export default function Statistics() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchStats = async () => {
-    if (!startDate || !endDate) return;
+  // `range` προαιρετικό: το δίνουν τα κουμπιά έτοιμων διαστημάτων, που αλλάζουν
+  // τα πεδία και τρέχουν το ερώτημα στο ΙΔΙΟ render — πριν προλάβει το setState.
+  const fetchStats = async (range) => {
+    const from = range?.start ?? startDate;
+    const to = range?.end ?? endDate;
+    if (!from || !to) return;
     setLoading(true);
     setLoadedCount(0);
     setVisibleRows(HISTORY_PAGE);
     setShowHistory(false); // Κρύβουμε το ιστορικό σε κάθε νέα αναζήτηση
 
-    const startIso = new Date(startDate).toISOString();
-    const endIso = new Date(endDate).toISOString();
-    setAppliedRange({ start: startDate, end: endDate });
+    const startIso = new Date(from).toISOString();
+    const endIso = new Date(to).toISOString();
+    setAppliedRange({ start: from, end: to });
 
     // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό.
     // stores!inner (αντί για stores ( )): client feedback 08/08 — τρίτο φίλτρο
@@ -148,6 +185,17 @@ export default function Statistics() {
       toast.error("Σφάλμα κατά την ανάκτηση των στατιστικών.");
     }
     setLoading(false);
+  };
+
+  // Πατάς κουμπί → αλλάζουν τα πεδία ΚΑΙ τρέχει αμέσως το ερώτημα. Το διάστημα
+  // περνά ρητά στο fetchStats: το setState είναι ασύγχρονο, οπότε ένα σκέτο
+  // fetchStats() θα διάβαζε ακόμη τις ΠΡΟΗΓΟΥΜΕΝΕΣ ημερομηνίες.
+  const applyPeriod = (period) => {
+    const range = rangeFor(period);
+    setStartDate(range.start);
+    setEndDate(range.end);
+    setActivePeriod(period.id);
+    fetchStats(range);
   };
 
   const calculateKPIs = () => {
@@ -244,78 +292,117 @@ export default function Statistics() {
       </div>
 
       {/* Πίνακας Ελέγχου (Φίλτρα) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 items-end shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-        
-        <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-[#C5A066]">Από</label>
-          <input 
-            type="datetime-local" 
-            value={startDate} 
-            onChange={e => setStartDate(e.target.value)} 
-            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
-          />
-        </div>
-        
-        <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-[#C5A066]">Έως</label>
-          <input 
-            type="datetime-local" 
-            value={endDate} 
-            onChange={e => setEndDate(e.target.value)} 
-            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
-          />
-        </div>
+      <div className="mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
 
-        <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-[#C5A066]">Κατάστημα</label>
-          <select 
-            value={selectedStore} 
-            onChange={e => setSelectedStore(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm cursor-pointer"
-          >
-            <option value="">Όλα τα καταστήματα</option>
-            {storesList.map(store => (
-              <option key={store.id} value={store.id}>{store.name}</option>
-            ))}
-          </select>
-        </div>
+        {/* ── Έτοιμα διαστήματα: το πρώτο πράγμα που βλέπεις μπαίνοντας ────
+            Αίτημα πελάτη 06/09/2026. Πριν, η οθόνη άνοιγε με δύο πεδία
+            datetime-local — στο κινητό αυτό σημαίνει τρία tap και έναν
+            επιλογέα ημερομηνίας για να δεις «τι έγινε χθες». */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {PERIODS.map(p => {
+            const active = activePeriod === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => applyPeriod(p)}
+                disabled={loading}
+                className="px-3.5 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                style={active
+                  ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 2px 8px var(--accent-muted)' }
+                  : { backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
 
-        <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-[#C5A066]">Διανομέας</label>
-          <select 
-            value={selectedDriver} 
-            onChange={e => setSelectedDriver(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm cursor-pointer"
-          >
-            <option value="">Όλοι οι διανομείς</option>
-            {driversList.map(driver => (
-              <option key={driver.id} value={driver.id}>{driver.full_name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5 lg:col-span-1">
-          <label className="text-xs font-bold text-[#C5A066]">Είδος</label>
-          <select
-            value={selectedCategory}
-            onChange={e => setSelectedCategory(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm cursor-pointer"
-          >
-            <option value="">Όλα τα είδη</option>
-            {STORE_CATEGORIES.map(cat => (
-              <option key={cat.value} value={cat.value}>{cat.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="lg:col-span-1 flex justify-center lg:justify-end">
           <button
-            onClick={fetchStats}
-            disabled={loading} 
-            className="w-full sm:w-auto px-8 lg:px-6 py-2.5 btn-glass text-[#C5A066] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] rounded-xl cursor-pointer font-bold transition-all disabled:opacity-50 h-[42px] flex items-center justify-center gap-2"
+            onClick={() => setShowCustom(v => !v)}
+            className="px-3.5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all"
+            style={activePeriod === null
+              ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff' }
+              : { backgroundColor: 'transparent', color: 'var(--text-muted)', border: '1px dashed var(--border-default)' }}
+            title="Δικό σου διάστημα, με ώρα"
           >
-            {loading ? 'Φόρτωση...' : <><RefreshCcw size={16} /> Ανανέωση</>}
+            <Calendar size={15} /> Προσαρμογή
           </button>
+        </div>
+
+        {/* Τα πεδία ημερομηνίας εμφανίζονται μόνο όταν ζητηθούν — ή όταν το
+            τρέχον διάστημα ΕΙΝΑΙ χειροκίνητο, ώστε να μη μένει κρυφό αυτό που
+            πραγματικά ισχύει. */}
+        {(showCustom || activePeriod === null) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-[#C5A066]">Από</label>
+              <input
+                type="datetime-local"
+                value={startDate}
+                onChange={e => { setStartDate(e.target.value); setActivePeriod(null); }}
+                className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-[#C5A066]">Έως</label>
+              <input
+                type="datetime-local"
+                value={endDate}
+                onChange={e => { setEndDate(e.target.value); setActivePeriod(null); }}
+                className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-[#C5A066]">Κατάστημα</label>
+            <SearchableSelect
+              value={selectedStore}
+              onChange={setSelectedStore}
+              options={storesList.map(s => ({ value: s.id, label: s.name }))}
+              emptyLabel="Όλα τα καταστήματα"
+              className="p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-[#C5A066]">Διανομέας</label>
+            <SearchableSelect
+              value={selectedDriver}
+              onChange={setSelectedDriver}
+              options={driversList.map(d => ({ value: d.id, label: d.full_name }))}
+              emptyLabel="Όλοι οι διανομείς"
+              className="p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-[#C5A066]">Είδος</label>
+            {/* Τα είδη είναι μετρημένα στα δάχτυλα — εδώ η αναζήτηση θα ήταν
+                περισσότερη δουλειά για τον χρήστη, όχι λιγότερη. */}
+            <select
+              value={selectedCategory}
+              onChange={e => setSelectedCategory(e.target.value)}
+              className="w-full p-2.5 rounded-xl border border-[#C5A066]/30 outline-none focus:border-[#C5A066] focus:ring-1 focus:ring-[#C5A066]/50 btn-glass text-adaptive-light transition-colors text-sm cursor-pointer"
+            >
+              <option value="">Όλα τα είδη</option>
+              {STORE_CATEGORIES.map(cat => (
+                <option key={cat.value} value={cat.value}>{cat.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-center lg:justify-end">
+            <button
+              onClick={() => fetchStats()}
+              disabled={loading}
+              className="w-full sm:w-auto px-8 lg:px-6 py-2.5 btn-glass text-[#C5A066] border border-[#C5A066]/50 hover:border-[#C5A066] hover:shadow-[inset_0_0_15px_rgba(197,160,102,0.4)] rounded-xl cursor-pointer font-bold transition-all disabled:opacity-50 h-[42px] flex items-center justify-center gap-2"
+            >
+              {loading ? 'Φόρτωση...' : <><RefreshCcw size={16} /> Ανανέωση</>}
+            </button>
+          </div>
         </div>
 
       </div>
@@ -345,10 +432,16 @@ export default function Statistics() {
             <div className="p-6 card-glass backdrop-blur-md border border-[#38EF7D]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col items-center hover:-translate-y-1 transition-transform">
               <div className="flex items-center justify-center gap-2 mb-2 text-[#38EF7D] drop-shadow-[0_0_5px_rgba(56,239,125,0.5)] relative z-10">
                 <Clock size={20} />
-                <h3 className="m-0 text-base font-bold">Μέσος Χρόνος Παράδοσης</h3>
+                {/* «Συνολικός» ρητά (πελάτης 06/09/2026): ο χάρτης και η εφαρμογή του
+                    διανομέα δείχνουν ΑΠΟΔΟΧΗ→ΠΟΡΤΑ, εδώ μετράμε ΔΗΜΙΟΥΡΓΙΑ→ΠΟΡΤΑ.
+                    Τα δύο νούμερα δεν συμφωνούν ποτέ και σωστά — η διαφορά τους
+                    είναι η αναμονή μέχρι να πάρει την παραγγελία διανομέας. */}
+                <h3 className="m-0 text-base font-bold">Μέσος Συνολικός Χρόνος</h3>
               </div>
               <p className="m-0 text-4xl font-black text-adaptive-light relative z-10">{kpis.avgTime} <span className="text-xl font-bold text-adaptive-light">λεπτά</span></p>
-              <small className="text-adaptive block mt-2 font-medium relative z-10">Από τη δημιουργία έως την πόρτα</small>
+              <small className="text-adaptive block mt-2 font-medium relative z-10" title="Ο χάρτης και η εφαρμογή του διανομέα δείχνουν τον χρόνο διανομής (αποδοχή → πόρτα). Η διαφορά είναι η αναμονή μέχρι να την πάρει διανομέας.">
+                Δημιουργία → πόρτα, μαζί με την αναμονή
+              </small>
             </div>
             <div className="p-6 card-glass backdrop-blur-md border border-[#9D4EDD]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col items-center hover:-translate-y-1 transition-transform">
               <div className="flex items-center justify-center gap-2 mb-2 text-[#9D4EDD] drop-shadow-[0_0_5px_rgba(157,78,221,0.5)] relative z-10">
