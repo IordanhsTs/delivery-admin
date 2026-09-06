@@ -31,13 +31,61 @@ let seq = 0;
 // Ποια ενότητα δείχνει τώρα η οθόνη — το γεμίζει το useSectionHistory.
 let getTab = () => null;
 
+// ── ΤΟ ΤΡΑΒΗΓΜΑ ΠΡΟΣ ΤΑ ΚΑΤΩ ΔΕΝ ΕΠΙΣΤΡΕΦΕΙ ΣΤΗΝ ΑΡΧΙΚΗ ────────────────────
+// Αίτημα πελάτη 06/09/2026: στο κινητό το pull-to-refresh κάνει κανονικό reload
+// της σελίδας. Η React ξαναξεκινούσε από τον χάρτη, οπότε ο διαχειριστής έχανε
+// τη θέση του κάθε φορά που ήθελε απλώς φρέσκα δεδομένα.
+//
+// ΔΥΟ ΠΗΓΕΣ, ΜΕ ΑΥΤΗ ΤΗ ΣΕΙΡΑ:
+//   1. `history.state` — επιβιώνει του reload και είναι η ΑΚΡΙΒΗΣ στάση όπου
+//      βρισκόταν ο browser, άρα συμφωνεί με το τι θα κάνει το «πίσω».
+//   2. `sessionStorage` — εφεδρικό για όποιον browser καθαρίζει το history.state
+//      (και για την περίπτωση που η στάση δεν είναι δική μας).
+// Και οι δύο ζουν όσο η καρτέλα: νέα καρτέλα ξεκινά κανονικά από τον χάρτη.
+const TAB_KEY = 'vtx.admin.tab';
+
+function rememberTab(tab) {
+  try {
+    sessionStorage.setItem(TAB_KEY, tab);
+  } catch {
+    /* Ιδιωτική περιήγηση ή γεμάτος αποθηκευτικός χώρος — δεν είναι κρίσιμο. */
+  }
+}
+
+/**
+ * Η ενότητα με την οποία πρέπει να ξεκινήσει η εφαρμογή μετά από reload.
+ *
+ * @param {string}   fallback Πού πάμε όταν δεν υπάρχει τίποτα αποθηκευμένο.
+ * @param {string[]} [valid]  Τα αποδεκτά id· φράχτης ώστε μια παλιά αποθηκευμένη
+ *                            τιμή (από προηγούμενη έκδοση) να μη δείξει κενή οθόνη.
+ */
+export function restoreTab(fallback, valid) {
+  if (typeof window === 'undefined') return fallback;
+
+  const state = window.history.state;
+  let tab = state?.vtx === 'tab' ? state.tab : null;
+
+  if (!tab) {
+    try {
+      tab = sessionStorage.getItem(TAB_KEY);
+    } catch {
+      tab = null;
+    }
+  }
+
+  if (!tab) return fallback;
+  if (valid && !valid.includes(tab)) return fallback;
+  return tab;
+}
+
 // Κάθε δική μας στάση φέρει { vtx: 'tab', tab }. Η ρίζα είναι επιπλέον
 // σημαδεμένη με root:true: από εκεί και πίσω φεύγουμε από την εφαρμογή.
 function tagRootEntry(tab) {
+  rememberTab(tab);
   const state = window.history.state;
   if (state?.vtx === 'tab') {
-    // Refresh: η στάση υπάρχει ήδη από πριν, αλλά η React ξαναξεκίνησε από τον
-    // χάρτη — συγχρονίζουμε την ταμπέλα με αυτό που πραγματικά δείχνει η οθόνη.
+    // Refresh: η στάση υπάρχει ήδη από πριν. Η React ξεκινά πλέον από ΤΗΝ ΙΔΙΑ
+    // ενότητα (βλ. restoreTab), οπότε εδώ απλώς επιβεβαιώνεται η ταμπέλα.
     window.history.replaceState({ ...state, tab }, '');
     return;
   }
@@ -112,6 +160,7 @@ export function useSectionHistory({ enabled, activeTab, setActiveTab }) {
       // 2) Αλλιώς γυρνάμε στην ενότητα της στάσης. Αν η στάση δεν είναι δική
       //    μας, ο browser φεύγει έτσι κι αλλιώς — δεν έχουμε τι να κάνουμε.
       if (event.state?.vtx === 'tab' && event.state.tab) {
+        rememberTab(event.state.tab);
         setActiveTab(event.state.tab);
       }
     };
@@ -122,6 +171,7 @@ export function useSectionHistory({ enabled, activeTab, setActiveTab }) {
 
   return useCallback((tab) => {
     if (tab === tabRef.current) return;
+    rememberTab(tab);
     const state = { vtx: 'tab', tab };
     // Πάνω σε εφεδρική στάση γράφουμε από πάνω της — δεν είναι στάση που άξιζε
     // να επισκεφτεί κανείς με το «πίσω».

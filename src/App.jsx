@@ -19,7 +19,7 @@ import Login from './Login';
 import { useStoreMessages } from './useStoreMessages';
 import BackupModeBanner from './BackupModeBanner';
 import ConfirmDialogHost from './ConfirmDialog';
-import { useSectionHistory, useBackClose } from './backNav';
+import { useSectionHistory, useBackClose, restoreTab } from './backNav';
 import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -191,6 +191,10 @@ const NAV_ITEMS = [
 // οθόνη τηλεφώνου γίνονταν οριζόντιο scroll και έμοιαζαν ακανόνιστα.
 const MOBILE_PRIMARY_IDS = ['map', 'create-order', 'messages'];
 
+// Φράχτης για την επαναφορά ενότητας μετά από reload: μια αποθηκευμένη τιμή που
+// δεν υπάρχει πια (μετονομασία ενότητας σε νέα έκδοση) θα έδειχνε κενή οθόνη.
+const NAV_IDS = NAV_ITEMS.map((item) => item.id);
+
 // Ο χάρτης ('map') μένει εκτός αυτού του object — φορτώνεται ξεχωριστά και μόνιμα
 // mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
 const VIEW_COMPONENTS = {
@@ -242,7 +246,9 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('map');
+  // ΟΧΙ σκέτο 'map': μετά από pull-to-refresh στο κινητό ο διαχειριστής πρέπει να
+  // ξαναβρεί την ενότητα που κοίταζε, όχι τον χάρτη (βλ. restoreTab στο backNav).
+  const [activeTab, setActiveTab] = useState(() => restoreTab('map', NAV_IDS));
   const [moreOpen, setMoreOpen] = useState(false);
   // ΜΕΝΟΥ ΑΝΑΔΥΟΜΕΝΟ ΣΤΟΝ ΧΑΡΤΗ (desktop): στον χάρτη το μενού μαζεύεται με το κουμπί
   // της μπάρας και ο χώρος που περισσεύει πάει στη δεξιά στήλη, ώστε «Ενεργές» και
