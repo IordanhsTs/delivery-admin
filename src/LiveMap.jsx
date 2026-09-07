@@ -152,10 +152,11 @@ function MapFocusHandler({ target }) {
 // το περιεχόμενο είναι ζωντανό React, τοποθετημένο στις σωστές συντεταγμένες με
 // OverlayView.draw() + createPortal. Σκόπιμα ΟΧΙ AdvancedMarker — απαιτεί
 // cloud-configured Map ID, οπότε το δικό μας inline DARK_MAP_STYLE θα αγνοούνταν.
-function DriverMarkerOverlay({ map, position, children }) {
+function DriverMarkerOverlay({ map, position, isOpen, children }) {
   const [container] = useState(() => {
     const div = document.createElement('div');
     div.style.position = 'absolute';
+    div.style.zIndex = '1';
     return div;
   });
   const overlayRef = useRef(null);
@@ -167,6 +168,8 @@ function DriverMarkerOverlay({ map, position, children }) {
   // βλέπει την τρέχουσα θέση.
   const positionRef = useRef(position);
   positionRef.current = position;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
 
   useEffect(() => {
     if (!map || !window.google?.maps) return undefined;
@@ -201,6 +204,29 @@ function DriverMarkerOverlay({ map, position, children }) {
   useEffect(() => {
     overlayRef.current?.draw();
   }, [position.lat, position.lng]);
+
+  // Κάθε δείκτης διανομέα είναι δικό του ανεξάρτητο OverlayView, δηλαδή ένα
+  // ξεχωριστό sibling div μέσα στο ίδιο pane του Google Maps· η σειρά που
+  // σκεπάζει το ένα το άλλο ακολουθεί τη σειρά προσθήκης στο DOM, όχι το
+  // z-index του εσωτερικού tooltip (αυτό μετράει μόνο ΜΕΣΑ στο δικό του
+  // marker, γιατί το `transform` στο marker div ανοίγει δικό του stacking
+  // context). Γι' αυτό ανεβάζουμε το z-index ΤΟΥ ΙΔΙΟΥ ΤΟΥ container όταν η
+  // καρτέλα είναι ανοιχτή (tap, κινητό) ή hover (desktop) — αλλιώς ένας
+  // νεότερος δείκτης δίπλα μπορούσε να σκεπάσει την ανοιχτή καρτέλα άλλου.
+  useEffect(() => {
+    container.style.zIndex = isOpen ? '30' : '1';
+  }, [container, isOpen]);
+
+  useEffect(() => {
+    const handleEnter = () => { container.style.zIndex = '30'; };
+    const handleLeave = () => { container.style.zIndex = isOpenRef.current ? '30' : '1'; };
+    container.addEventListener('mouseenter', handleEnter);
+    container.addEventListener('mouseleave', handleLeave);
+    return () => {
+      container.removeEventListener('mouseenter', handleEnter);
+      container.removeEventListener('mouseleave', handleLeave);
+    };
+  }, [container]);
 
   return createPortal(children, container);
 }
@@ -294,7 +320,7 @@ function DriverMarkersLayer({ drivers, orders, currentTime, lastCompletedTimes }
     }
 
     return (
-      <DriverMarkerOverlay key={driver.id} map={map} position={{ lat: driver.latitude, lng: driver.longitude }}>
+      <DriverMarkerOverlay key={driver.id} map={map} position={{ lat: driver.latitude, lng: driver.longitude }} isOpen={openDriverId === driver.id}>
         {/* Ίδιο anchor math με το παλιό iconAnchor [45,19] σε κουτί [90,58]:
             η μεταφορά -45px/-19px φέρνει το ΚΕΝΤΡΟ ΤΟΥ ΚΥΚΛΟΥ (όχι το pill
             από κάτω) πάνω στις πραγματικές συντεταγμένες. */}
