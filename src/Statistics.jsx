@@ -292,7 +292,15 @@ export default function Statistics() {
       </div>
 
       {/* Πίνακας Ελέγχου (Φίλτρα) */}
-      <div className="mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+      {/* relative + z-20: τα SearchableSelect (Κατάστημα/Διανομέας) ανοίγουν
+          λίστα με απόλυτη θέση και z-30, αλλά αυτό μόνο του δεν αρκεί — η
+          ενότητα αποτελεσμάτων από κάτω είναι μέσα σε motion.div με
+          animated opacity/transform, που της δίνει ΔΙΚΟ ΤΗΣ stacking context
+          και έτσι ζωγραφίζεται ΠΑΝΩ από τη λίστα, ό,τι z-index κι αν έχει
+          εκείνη, αφού ο ίδιος ο πίνακας φίλτρων δεν είχε δικό του context να
+          «σηκωθεί» μαζί με τα παιδιά του. Το z-20 εδώ σηκώνει ΟΛΟ τον πίνακα
+          (μαζί με την ανοιχτή λίστα μέσα του) πάνω από τα αποτελέσματα. */}
+      <div className="relative z-20 mb-8 card-glass backdrop-blur-md p-4 md:p-5 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
 
         {/* ── Έτοιμα διαστήματα: το πρώτο πράγμα που βλέπεις μπαίνοντας ────
             Αίτημα πελάτη 06/09/2026. Πριν, η οθόνη άνοιγε με δύο πεδία
