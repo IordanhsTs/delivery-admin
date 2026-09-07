@@ -64,7 +64,7 @@ export default function BillingDashboard() {
         .from('orders')
         .select(`
           id, created_at, status, store_id, driver_id,
-          stores ( name, delivery_fee ),
+          stores ( name, delivery_fee, category, driver_payout_override ),
           drivers ( full_name )
         `)
         .eq('status', 'completed')
@@ -116,6 +116,26 @@ export default function BillingDashboard() {
 
   const COLORS = ['#C5A066', '#38EF7D', '#9D4EDD', '#60A5FA', '#FBBF24', '#F87171'];
 
+  // ── Αμοιβή διανομέα: ΕΝΤΕΛΩΣ ανεξάρτητη από τη χρέωση καταστήματος (07/09/2026) ──
+  // Παλιά η πληρωμή διανομέα ήταν storeRate − 0,05 σταθερό. Όταν ο διαχειριστής
+  // ανέβασε τη χρέωση φαγητού/ψιλικών στο 0,20 για τον ΦΠΑ, η πληρωμή διανομέα
+  // ακολούθησε αυτόματα στο 0,15 — κανείς δεν το ζήτησε, απλώς οι δύο τιμές
+  // ήταν δεμένες. Τώρα η αμοιβή διαβάζεται από το driver_category_rates
+  // (καρτέλα «Αμοιβές Διανομέων» στη Διαχείριση) ανά είδος καταστήματος, με
+  // δυνατότητα εξαίρεσης ανά συγκεκριμένο κατάστημα (stores.driver_payout_override,
+  // για ειδικές συμφωνίες) — βλ. migration 0033.
+  const [categoryRates, setCategoryRates] = useState({});
+  useEffect(() => {
+    supabase.from('driver_category_rates').select('category, rate').then(({ data, error }) => {
+      if (data) {
+        const map = {};
+        data.forEach(r => { map[r.category] = Number(r.rate); });
+        setCategoryRates(map);
+      }
+      if (error) console.error('Σφάλμα φόρτωσης αμοιβών διανομέων:', error);
+    });
+  }, []);
+
   const calculateFinancials = () => {
     let totalStoreCharges = 0;
     let totalDriverPayouts = 0;
@@ -127,16 +147,13 @@ export default function BillingDashboard() {
       const storeName = order.stores?.name || 'Άγνωστο Κατάστημα';
       const driverName = order.drivers?.full_name || 'Άγνωστος Οδηγός';
       const storeRate = order.stores?.delivery_fee || 0;
-      // ΤΟ 0,50 ΗΤΑΝ ΛΑΘΟΣ ΥΠΟΔΙΑΣΤΟΛΗΣ (05/09/2026). Με delivery_fee 0,15/0,18 η
-      // «Πληρωμή Διανομέων» έβγαινε −0,35 και −0,32 €, δηλαδή αρνητικός μισθός.
-      // Το μερίδιο της εταιρείας είναι 5 λεπτά ανά παραγγελία, όχι 50:
-      //   καφέ   0,15 − 0,05 = 0,10 €
-      //   φαγητό 0,18 − 0,05 = 0,13 €   (ίδιο και για τα ψιλικά)
-      // Η ανάλυση παρακάτω ομαδοποιεί ανά ΤΙΜΗ, όχι ανά είδος: φαγητό και ψιλικά
-      // πέφτουν μόνα τους στην ίδια γραμμή («15 παρ. x 0.13 €»), ενώ ένα μελλοντικό
-      // κατάστημα με άλλη χρέωση (π.χ. 0,22 → 0,17 €) προσθέτει μόνο του τη δική του.
-      const companyShare = 0.05;
-      const driverPayout = storeRate - companyShare;
+      const override = order.stores?.driver_payout_override;
+      const driverPayout = override != null
+        ? Number(override)
+        : (categoryRates[order.stores?.category] ?? categoryRates.default ?? 0);
+      // Το «μερίδιο εταιρείας» είναι πλέον απλά ό,τι απομένει — πληροφοριακό,
+      // δεν καθορίζει καμία πληρωμή (αυτή έρχεται έτοιμη από πάνω).
+      const companyShare = storeRate - driverPayout;
 
       totalStoreCharges += storeRate;
       totalDriverPayouts += driverPayout;

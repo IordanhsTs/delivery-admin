@@ -3,7 +3,7 @@ import { supabase, getTenantSchema } from './supabaseClient';
 import { liveChannel, skipFirst } from './live';
 import {
   Building2, Bike, X, Plus, Save, Phone, Mail, Edit2, LogOut, MapPin,
-  AlertTriangle, Ban, ShieldCheck, RefreshCcw, Lock, KeyRound,
+  AlertTriangle, Ban, ShieldCheck, RefreshCcw, Lock, KeyRound, Coins,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
@@ -229,18 +229,20 @@ export default function StoreManagement() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button onClick={refresh} disabled={busy}
-            className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition disabled:opacity-50"
-            style={subtleBtn}>
-            <RefreshCcw size={16} className={busy ? 'animate-spin' : ''} /> Ανανέωση
-          </button>
-          <button onClick={() => setCreating(activeTab === 'stores' ? 'store' : 'courier')}
-            className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white transition"
-            style={accentBtn}>
-            <Plus size={16} /> {activeTab === 'stores' ? 'Νέο Κατάστημα' : 'Νέος Διανομέας'}
-          </button>
-        </div>
+        {activeTab === 'rates' ? null : (
+          <div className="flex items-center gap-2">
+            <button onClick={refresh} disabled={busy}
+              className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition disabled:opacity-50"
+              style={subtleBtn}>
+              <RefreshCcw size={16} className={busy ? 'animate-spin' : ''} /> Ανανέωση
+            </button>
+            <button onClick={() => setCreating(activeTab === 'stores' ? 'store' : 'courier')}
+              className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white transition"
+              style={accentBtn}>
+              <Plus size={16} /> {activeTab === 'stores' ? 'Νέο Κατάστημα' : 'Νέος Διανομέας'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Εναλλαγή ────────────────────────────────────────────────────── */}
@@ -249,6 +251,7 @@ export default function StoreManagement() {
         {[
           { key: 'stores',   label: 'Καταστήματα',       icon: Building2, count: stores.length },
           { key: 'couriers', label: 'Διανομείς (Οδηγοί)', icon: Bike,     count: couriers.length },
+          { key: 'rates',    label: 'Αμοιβές Διανομέων',  icon: Coins },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className="px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition"
@@ -269,7 +272,9 @@ export default function StoreManagement() {
         ))}
       </div>
 
-      {busy ? (
+      {activeTab === 'rates' ? (
+        <DriverRatesPanel />
+      ) : busy ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map(i => <div key={i} className="h-44 skeleton rounded-[14px]" />)}
         </div>
@@ -324,6 +329,121 @@ function EmptyState({ icon: Icon, title, text }) {
       <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title}</p>
       <p className="text-sm m-0" style={{ color: 'var(--text-muted)' }}>{text}</p>
     </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Αμοιβές διανομέων ανά είδος παραγγελίας (αίτημα πελάτη 07/09/2026)
+//
+// Πριν, η πληρωμή διανομέα στην Εκκαθάριση ήταν δεμένη πάνω στη χρέωση
+// καταστήματος (storeRate − 0,05 σταθερό) — μια αλλαγή χρέωσης για ΦΠΑ άλλαζε
+// σιωπηλά και την πληρωμή διανομέα. Εδώ ορίζεται η αμοιβή ΑΠΕΥΘΕΙΑΣ, ανά είδος
+// καταστήματος, εντελώς ανεξάρτητα από τη χρέωση. Για ειδική συμφωνία με ΕΝΑ
+// συγκεκριμένο κατάστημα υπάρχει ξεχωριστό πεδίο στην ίδια την κάρτα του
+// καταστήματος (driver_payout_override, βλ. StoreDrawer παρακάτω) — αυτό εδώ
+// είναι μόνο η γενική προεπιλογή. Βλ. migration 0033.
+const RATE_CATEGORIES = [
+  ...STORE_CATEGORIES,
+  { value: 'default', label: 'Χωρίς κατηγορία' },
+];
+
+function DriverRatesPanel() {
+  const [rates, setRates] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchRates = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('driver_category_rates').select('category, rate');
+    if (data) {
+      const map = {};
+      data.forEach((r) => { map[r.category] = String(r.rate); });
+      setRates(map);
+    }
+    if (error) {
+      console.error('Σφάλμα φόρτωσης αμοιβών διανομέων:', error);
+      toast.error('Σφάλμα φόρτωσης αμοιβών διανομέων.');
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchRates(); }, [fetchRates]);
+
+  const setRate = (cat, value) => setRates((r) => ({ ...r, [cat]: value }));
+
+  async function save() {
+    const parsed = {};
+    for (const { value, label } of RATE_CATEGORIES) {
+      const n = Number(String(rates[value] ?? '').replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) {
+        toast.error(`Μη έγκυρο ποσό για «${label}».`);
+        return;
+      }
+      parsed[value] = n;
+    }
+
+    setSaving(true);
+    const results = await Promise.all(
+      RATE_CATEGORIES.map(({ value }) =>
+        supabase.from('driver_category_rates')
+          .update({ rate: parsed[value], updated_at: new Date().toISOString() })
+          .eq('category', value)
+      )
+    );
+    setSaving(false);
+
+    const failed = results.find((r) => r.error);
+    if (failed) {
+      toast.error('Υπήρξε σφάλμα κατά την αποθήκευση.');
+      console.error(failed.error);
+      return;
+    }
+    toast.success('Οι αμοιβές διανομέων ενημερώθηκαν!');
+    fetchRates();
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl">
+        <div className="h-56 skeleton rounded-[14px]" />
+      </div>
+    );
+  }
+
+  return (
+    <section className="p-4 space-y-4 max-w-2xl card-surface" style={cardStyle}>
+      <div>
+        <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
+          <Coins size={16} /> Αμοιβή διανομέα ανά παραγγελία
+        </h3>
+        <p className="text-[11px] m-0 mt-1.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
+          Πόσα παίρνει ο διανομέας για κάθε παραγγελία, ανά είδος καταστήματος —
+          ανεξάρτητο από τη χρέωση του καταστήματος. Για ειδική συμφωνία με ΕΝΑ
+          συγκεκριμένο κατάστημα, όρισέ το από την καρτέλα του καταστήματος στα
+          «Καταστήματα», όχι εδώ.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {RATE_CATEGORIES.map(({ value, label }) => (
+          <div key={value} className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            <div className="flex items-center gap-1.5">
+              <input type="number" step="0.01" min="0" value={rates[value] ?? ''}
+                onChange={(e) => setRate(value, e.target.value)}
+                className="w-24 px-3 py-2 rounded-lg outline-none text-sm text-right" style={inputStyle} />
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>€</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50"
+        style={accentBtn}>
+        <Save size={16} /> {saving ? 'Αποθήκευση…' : 'Αποθήκευση'}
+      </button>
+    </section>
   );
 }
 
@@ -389,6 +509,11 @@ function StoreCard({ store, index, onEdit }) {
         ) : (
           <Pill tone="warning" icon={MapPin}>Χωρίς θέση — δεν υπολογίζεται απόσταση</Pill>
         )}
+        {store.driver_payout_override != null ? (
+          <Pill tone="warning" icon={Coins} title="Ειδική συμφωνία — δεν ισχύει η γενική αμοιβή κατηγορίας">
+            Ειδική αμοιβή διανομέα: {eur(store.driver_payout_override)} €
+          </Pill>
+        ) : null}
       </div>
 
       <div className="mt-auto pt-1"><EditButton onClick={onEdit} /></div>
@@ -674,6 +799,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
     latitude: store.latitude ?? '',
     longitude: store.longitude ?? '',
     category: store.category || '',
+    driver_payout_override: store.driver_payout_override ?? '',
     owner_phone: store.owner_phone || '',
     owner_email: store.owner_email || '',
     owner_afm: store.owner_afm || '',
@@ -692,6 +818,13 @@ function StoreDrawer({ store, onClose, onChanged }) {
 
     const fee = Number(String(form.delivery_fee).replace(',', '.'));
     if (!Number.isFinite(fee) || fee < 0) { toast.error('Η χρέωση πρέπει να είναι θετικός αριθμός.'); return; }
+
+    const overrideRaw = String(form.driver_payout_override).trim();
+    const payoutOverride = overrideRaw === '' ? null : Number(overrideRaw.replace(',', '.'));
+    if (payoutOverride !== null && (!Number.isFinite(payoutOverride) || payoutOverride < 0)) {
+      toast.error('Η ειδική αμοιβή διανομέα πρέπει να είναι θετικός αριθμός ή κενή.');
+      return;
+    }
 
     const lat = String(form.latitude).trim() === '' ? null : Number(form.latitude);
     const lng = String(form.longitude).trim() === '' ? null : Number(form.longitude);
@@ -715,6 +848,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
       phone: form.phone.trim() || null,
       address: form.address.trim() || null,
       delivery_fee: fee,
+      driver_payout_override: payoutOverride,
       latitude: lat,
       longitude: lng,
       category: form.category || null,
@@ -770,6 +904,16 @@ function StoreDrawer({ store, onClose, onChanged }) {
             </select>
           </Field>
         </div>
+
+        {/* Εξαίρεση ΜΟΝΟ για αυτό το κατάστημα — π.χ. ειδική συμφωνία. Κενό
+            (προεπιλογή) = ισχύει η γενική αμοιβή κατηγορίας από την καρτέλα
+            «Αμοιβές Διανομέων» (βλ. migration 0033). */}
+        <Field label="Ειδική αμοιβή διανομέα (€, προαιρετικό)">
+          <input type="number" step="0.01" min="0" value={form.driver_payout_override}
+            onChange={(e) => set('driver_payout_override', e.target.value)}
+            placeholder="Κενό = γενική αμοιβή κατηγορίας"
+            className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+        </Field>
       </section>
 
       <AccountSection kind="store" row={store} onChanged={onChanged} />
