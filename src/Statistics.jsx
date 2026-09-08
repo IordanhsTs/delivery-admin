@@ -93,24 +93,25 @@ export default function Statistics() {
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
   };
 
-  // ΠΡΟΕΠΙΛΟΓΗ = ΤΡΕΧΟΥΣΑ ΕΒΔΟΜΑΔΑ (αίτημα πελάτη 08/09/2026) — πριν ήταν «Σήμερα».
+  // ΠΡΟΕΠΙΛΟΓΗ = ΣΗΜΕΡΑ (αίτημα πελάτη 08/09/2026 — επιβεβαιώθηκε ρητά ότι η
+  // «Τρέχουσα εβδομάδα» μένει ως ΕΠΙΛΟΓΗ κουμπιού, όχι ως προεπιλογή ανοίγματος).
   const today = new Date();
-  const startOfWeek = startOfCurrentWeek(today);
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
 
-  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfWeek));
+  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
   // Το διάστημα ΤΩΝ ΔΕΔΟΜΕΝΩΝ ΠΟΥ ΔΕΙΧΝΟΝΤΑΙ — όχι ό,τι γράφει αυτή τη στιγμή
   // στα πεδία. Χωρίς αυτό, μόλις ο διαχειριστής άλλαζε ημερομηνία (πριν πατήσει
   // «Ανανέωση») ο ρυθμός ανά ώρα θα διαιρούσε παλιές παραγγελίες με νέες ημέρες.
   const [appliedRange, setAppliedRange] = useState({
-    start: formatDateTimeLocal(startOfWeek),
+    start: formatDateTimeLocal(startOfToday),
     end: formatDateTimeLocal(today),
   });
 
   // Ποιο έτοιμο διάστημα είναι πατημένο· null όταν ο διαχειριστής έγραψε δικές
-  // του ημερομηνίες. Ξεκινά στην «Τρέχουσα εβδομάδα», που είναι και η
-  // προεπιλογή των πεδίων.
-  const [activePeriod, setActivePeriod] = useState('week');
+  // του ημερομηνίες. Ξεκινά στο «Σήμερα», που είναι και η προεπιλογή των πεδίων.
+  const [activePeriod, setActivePeriod] = useState('today');
   const [showCustom, setShowCustom] = useState(false);
 
   /** Το διάστημα ενός έτοιμου κουμπιού, σε μορφή που δέχονται τα πεδία. */
