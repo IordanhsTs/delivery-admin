@@ -36,10 +36,15 @@ export default function BillingDashboard() {
   };
 
   const today = new Date();
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // ΠΡΟΕΠΙΛΟΓΗ = ΤΡΕΧΟΥΣΑ ΕΒΔΟΜΑΔΑ (αίτημα πελάτη 08/09/2026, ίδιο με τα
+  // Στατιστικά) — Δευτέρα 00:00 μέχρι τώρα, όχι μόνο η σημερινή ημέρα.
+  // getDay(): 0=Κυριακή…6=Σάββατο· η Κυριακή θεωρείται τέλος εβδομάδας, όχι αρχή.
+  const startOfWeek = new Date();
+  const dayOfWeek = startOfWeek.getDay();
+  startOfWeek.setDate(startOfWeek.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  startOfWeek.setHours(0, 0, 0, 0);
 
-  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
+  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfWeek));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
 
   async function fetchCompletedOrders({ silent = false } = {}) {
