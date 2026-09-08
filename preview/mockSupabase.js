@@ -127,7 +127,19 @@ const CASH_LEDGER = [
   { kind: 'fuel',  id: 'f2', driver_id: 'd4', driver_name: DRIVERS[3], amount: 15.5, original_amount: null, note: null, created_at: cashDay(3, 18), edited_at: null , entry_date: entryDay(3) },
 ];
 
+// ── Ενεργές ώρες ανά διανομέα (08/09/2026) ─────────────────────────────────
+// Το Statistics.jsx καλεί driver_distance_report(p_from, p_to) για τον ρυθμό
+// «παρ./ενεργή ώρα» ανά διανομέα. Δεν υπάρχει driver_shifts στο harness — οι
+// ώρες εδώ είναι επινοημένες, αρκεί να δίνουν ρεαλιστικό/ποικίλο ρυθμό ώστε να
+// φαίνεται το νέο badge, όχι πραγματική ακρίβεια.
+const DRIVER_HOURS_REPORT = DRIVERS.map((full_name, id) => ({
+  driver_id: id,
+  full_name,
+  hours: Math.round((ROWS.filter((r) => r.driver_id === id).length / (6 + (id % 5))) * 10) / 10,
+}));
+
 const RPCS = {
+  driver_distance_report: DRIVER_HOURS_REPORT,
   cash_float_overview: [{ balance: -45.5, standard_amount: 300, low_balance_threshold: 100, is_low: true }],
   admin_cash_ledger_history: CASH_LEDGER,
   admin_pending_expenses: [

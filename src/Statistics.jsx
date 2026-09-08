@@ -21,13 +21,25 @@ import SearchableSelect from './SearchableSelect';
 // από τα μεσάνυχτα της (σήμερα − N + 1) μέχρι τώρα. Έτσι το «7 ημέρες»
 // συμφωνεί με το πλήθος ημερών που χρησιμοποιεί ο ρυθμός παραγγελιών/ώρα.
 const PERIODS = [
-  { id: 'today', label: 'Σήμερα',        days: 1 },
-  { id: 'd2',    label: '2 ημέρες',      days: 2 },
-  { id: 'd3',    label: '3 ημέρες',      days: 3 },
-  { id: 'd7',    label: '7 ημέρες',      days: 7 },
-  { id: 'd30',   label: '30 ημέρες',     days: 30 },
-  { id: 'month', label: 'Τρέχων μήνας',  month: true },
+  { id: 'today', label: 'Σήμερα',            days: 1 },
+  { id: 'd2',    label: '2 ημέρες',          days: 2 },
+  { id: 'd3',    label: '3 ημέρες',          days: 3 },
+  { id: 'd7',    label: '7 ημέρες',          days: 7 },
+  { id: 'd30',   label: '30 ημέρες',         days: 30 },
+  { id: 'week',  label: 'Τρέχουσα εβδομάδα', week: true },
+  { id: 'month', label: 'Τρέχων μήνας',      month: true },
 ];
+
+// Δευτέρα της τρέχουσας εβδομάδας, 00:00 — κοινό σημείο αναφοράς για την
+// προεπιλογή της οθόνης ΚΑΙ το κουμπί «Τρέχουσα εβδομάδα» (rangeFor).
+// getDay(): 0=Κυριακή…6=Σάββατο· η Κυριακή θεωρείται τέλος της εβδομάδας, όχι αρχή.
+function startOfCurrentWeek(from) {
+  const d = new Date(from);
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 export default function Statistics() {
   const [orders, setOrders] = useState([]);
@@ -45,6 +57,14 @@ export default function Statistics() {
   const [storesList, setStoresList] = useState([]);
   const [driversList, setDriversList] = useState([]);
 
+  // ── Πραγματικές ενεργές ώρες ανά διανομέα (αίτημα πελάτη 08/09/2026) ──────
+  // «Παραγγελίες ανά ώρα δουλειάς» ΑΝΑ ΔΙΑΝΟΜΕΑ — π.χ. 50 παραγγελίες σε 5
+  // ενεργές ώρες = 10/ώρα. driver_id → ώρες, από το driver_distance_report
+  // (ήδη υπάρχει, χρησιμοποιείται στο FuelReport.jsx) που αθροίζει τις
+  // πραγματικές βάρδιες (driver_shifts.started_at/ended_at), ΟΧΙ το ωράριο
+  // καταστήματος που τροφοδοτεί την υπάρχουσα κάρτα «Παραγγελίες ανά Ώρα».
+  const [driverHoursById, setDriverHoursById] = useState({});
+
   // ── Ώρες λειτουργίας, για τον ρυθμό «παραγγελίες ανά ώρα» ─────────────────
   // Αίτημα πελάτη 06/09/2026. Ο διαιρέτης ΔΕΝ είναι καρφωμένο 18: διαβάζεται από
   // τις ίδιες ρυθμίσεις που ορίζουν το ωράριο στο πρόγραμμα εβδομάδας
@@ -56,6 +76,12 @@ export default function Statistics() {
   // Επιλεγμένα Φίλτρα
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
+  // Ο διανομέας ΤΩΝ ΔΕΔΟΜΕΝΩΝ ΠΟΥ ΔΕΙΧΝΟΝΤΑΙ — όχι ό,τι είναι επιλεγμένο αυτή
+  // τη στιγμή στο dropdown. Ίδιο πρόβλημα με το appliedRange παρακάτω: μόλις ο
+  // διαχειριστής διάλεγε διανομέα (πριν πατήσει «Ανανέωση»), ο «Ρυθμός
+  // Διανομέα» άλλαζε αμέσως τίτλο/ώρες αλλά ο αριθμός παραγγελιών έμενε ακόμη
+  // ο παλιός, ΜΗ φιλτραρισμένος — δηλαδή «σύνολο εταιρίας ÷ ώρες αυτού».
+  const [appliedDriver, setAppliedDriver] = useState('');
   // Είδος καταστήματος (client feedback 08/08): «διάλεξε διανομέα + κατηγορία,
   // δες πόσες παραγγελίες έκανε, από ποια καταστήματα» — ίδιο μηχανισμό με τα
   // υπάρχοντα φίλτρα store/driver, τρίτο κριτήριο πάνω στο ήδη κοινό ερώτημα.
@@ -67,30 +93,30 @@ export default function Statistics() {
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
   };
 
-  // ΠΡΟΕΠΙΛΟΓΗ = ΣΗΜΕΡΑ (αίτημα πελάτη): από τα μεσάνυχτα μέχρι το λεπτό που
-  // ανοίγει η καρτέλα — όχι η τελευταία εβδομάδα που ίσχυε πριν.
+  // ΠΡΟΕΠΙΛΟΓΗ = ΤΡΕΧΟΥΣΑ ΕΒΔΟΜΑΔΑ (αίτημα πελάτη 08/09/2026) — πριν ήταν «Σήμερα».
   const today = new Date();
-  const startOfToday = new Date(today);
-  startOfToday.setHours(0, 0, 0, 0);
+  const startOfWeek = startOfCurrentWeek(today);
 
-  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfToday));
+  const [startDate, setStartDate] = useState(formatDateTimeLocal(startOfWeek));
   const [endDate, setEndDate] = useState(formatDateTimeLocal(today));
   // Το διάστημα ΤΩΝ ΔΕΔΟΜΕΝΩΝ ΠΟΥ ΔΕΙΧΝΟΝΤΑΙ — όχι ό,τι γράφει αυτή τη στιγμή
   // στα πεδία. Χωρίς αυτό, μόλις ο διαχειριστής άλλαζε ημερομηνία (πριν πατήσει
   // «Ανανέωση») ο ρυθμός ανά ώρα θα διαιρούσε παλιές παραγγελίες με νέες ημέρες.
   const [appliedRange, setAppliedRange] = useState({
-    start: formatDateTimeLocal(startOfToday),
+    start: formatDateTimeLocal(startOfWeek),
     end: formatDateTimeLocal(today),
   });
 
   // Ποιο έτοιμο διάστημα είναι πατημένο· null όταν ο διαχειριστής έγραψε δικές
-  // του ημερομηνίες. Ξεκινά στο «Σήμερα», που είναι και η προεπιλογή των πεδίων.
-  const [activePeriod, setActivePeriod] = useState('today');
+  // του ημερομηνίες. Ξεκινά στην «Τρέχουσα εβδομάδα», που είναι και η
+  // προεπιλογή των πεδίων.
+  const [activePeriod, setActivePeriod] = useState('week');
   const [showCustom, setShowCustom] = useState(false);
 
   /** Το διάστημα ενός έτοιμου κουμπιού, σε μορφή που δέχονται τα πεδία. */
   const rangeFor = (period) => {
     const now = new Date();
+    if (period.week) return { start: formatDateTimeLocal(startOfCurrentWeek(now)), end: formatDateTimeLocal(now) };
     const from = new Date(now);
     if (period.month) from.setDate(1);
     else from.setDate(now.getDate() - (period.days - 1));
@@ -136,6 +162,7 @@ export default function Statistics() {
     const startIso = new Date(from).toISOString();
     const endIso = new Date(to).toISOString();
     setAppliedRange({ start: from, end: to });
+    setAppliedDriver(selectedDriver);
 
     // Προσθέσαμε το "address" στο select για να φαίνεται στο ιστορικό.
     // stores!inner (αντί για stores ( )): client feedback 08/08 — τρίτο φίλτρο
@@ -162,9 +189,24 @@ export default function Statistics() {
       return q;
     };
 
-    const { data, error, truncated } = await fetchAllRows(buildQuery, {
-      onProgress: setLoadedCount,
-    });
+    // driver_distance_report δέχεται ΗΜΕΡΟΜΗΝΙΕΣ, όχι ώρα — υπολογίζει ολόκληρες
+    // ημέρες Ελλάδας (βλ. FuelReport.jsx). Σε διάστημα «Σήμερα» αυτό ταιριάζει
+    // (η βάρδια δεν μπορεί να έχει τρέξει στο μέλλον), αλλά ένα προσαρμοσμένο
+    // διάστημα ώρας μέσα στην ημέρα (π.χ. 14:00–18:00) θα μετρήσει τις ώρες
+    // ΟΛΗΣ της ημέρας — αποδεκτή προσέγγιση, το ίδιο κάνει ήδη το Ταμείο.
+    const [{ data, error, truncated }, hoursRes] = await Promise.all([
+      fetchAllRows(buildQuery, { onProgress: setLoadedCount }),
+      supabase.rpc('driver_distance_report', { p_from: from.slice(0, 10), p_to: to.slice(0, 10) }),
+    ]);
+
+    if (hoursRes.error) {
+      console.error('Σφάλμα ωρών διανομέων:', hoursRes.error);
+      setDriverHoursById({});
+    } else {
+      const map = {};
+      (hoursRes.data || []).forEach(r => { map[r.driver_id] = Number(r.hours); });
+      setDriverHoursById(map);
+    }
 
     if (data) {
       setOrders(data);
@@ -221,18 +263,30 @@ export default function Statistics() {
         totalMins += mins;
         validOrdersForTime += 1;
 
+        // Κλειδί το driver_id (όχι το όνομα): χρειάζεται για να ενωθεί παρακάτω
+        // με τις ώρες βάρδιας του driver_distance_report, και αποφεύγει να
+        // συγχωνεύσει δύο διαφορετικούς διανομείς με τυχαία ίδιο ονοματεπώνυμο.
+        // ?? και όχι ||: ένα driver_id 0/'' είναι έγκυρο αναγνωριστικό, όχι «κενό».
+        const driverId = order.driver_id ?? 'unknown';
         const driverName = order.drivers?.full_name || 'Άγνωστος';
-        if (!driverTimes[driverName]) driverTimes[driverName] = { totalMins: 0, count: 0 };
-        driverTimes[driverName].totalMins += mins;
-        driverTimes[driverName].count += 1;
+        if (!driverTimes[driverId]) driverTimes[driverId] = { name: driverName, totalMins: 0, count: 0 };
+        driverTimes[driverId].totalMins += mins;
+        driverTimes[driverId].count += 1;
       }
     });
 
     const avgTime = validOrdersForTime > 0 ? (totalMins / validOrdersForTime).toFixed(1) : 0;
     const sortedStores = Object.entries(storeCounts).sort((a, b) => b[1] - a[1]);
-    const sortedDrivers = Object.entries(driverTimes).map(([name, data]) => ({
-      name, avg: (data.totalMins / data.count).toFixed(1), deliveries: data.count
-    })).sort((a, b) => a.avg - b.avg);
+    const sortedDrivers = Object.entries(driverTimes).map(([driverId, data]) => {
+      // Ρυθμός = παραδόσεις ÷ πραγματικές ενεργές ώρες βάρδιας στο ίδιο
+      // διάστημα (0 ή άγνωστες ώρες → «—», ποτέ Infinity/παραπλανητικό νούμερο).
+      const hours = driverHoursById[driverId];
+      const rate = hours && hours > 0 ? data.count / hours : null;
+      return {
+        driverId, name: data.name, avg: (data.totalMins / data.count).toFixed(1),
+        deliveries: data.count, hours, rate,
+      };
+    }).sort((a, b) => a.avg - b.avg);
 
     return { avgTime, totalOrders: orders.length, sortedStores, sortedDrivers };
   };
@@ -254,7 +308,24 @@ export default function Statistics() {
     if (!Number.isFinite(ms) || ms <= 0) return 1;
     return Math.max(1, Math.ceil(ms / 86400000));
   })();
-  const ordersPerHour = kpis.totalOrders / rangeDays / activeHours;
+  // ΔΙΟΡΘΩΣΗ (πελάτης 09/09/2026): όταν φιλτράρουμε σε ΕΝΑΝ διανομέα, ο ρυθμός
+  // διαιρούσε ΠΑΝΤΑ με το σταθερό ωράριο καταστήματος (π.χ. 18 ώρες) — ένας
+  // διανομέας ενεργός μόνο 8 ώρες σήμερα έβγαινε τεχνητά αργός. Με επιλεγμένο
+  // διανομέα χρησιμοποιούμε τις ΔΙΚΕΣ ΤΟΥ πραγματικές ενεργές ώρες βάρδιας
+  // (driver_distance_report, ίδιο μοτίβο με το badge στην «Επίδοση Διανομέων»).
+  // Χωρίς καταγεγραμμένες ώρες πέφτει πίσω στον παλιό τύπο, καλύτερο από «—».
+  //
+  // appliedDriver ΚΑΙ ΟΧΙ selectedDriver (2η διόρθωση, ίδια μέρα): το kpis.
+  // totalOrders μετρά τις ΗΔΗ φορτωμένες παραγγελίες — αυτές του ΤΕΛΕΥΤΑΙΟΥ
+  // «Ανανέωση», όχι ό,τι δείχνει τώρα το dropdown. Με selectedDriver, μόλις ο
+  // διαχειριστής διάλεγε διανομέα (πριν πατήσει «Ανανέωση») ο τίτλος/οι ώρες
+  // άλλαζαν αμέσως αλλά ο αριθμός παραγγελιών έμενε ο παλιός της ΟΛΗΣ
+  // εταιρίας — δηλαδή ακριβώς «σύνολο εταιρίας ÷ ώρες ενός διανομέα».
+  const selectedDriverHours = appliedDriver ? driverHoursById[appliedDriver] : null;
+  const usingDriverRate = !!(selectedDriverHours && selectedDriverHours > 0);
+  const ordersPerHour = usingDriverRate
+    ? kpis.totalOrders / selectedDriverHours
+    : kpis.totalOrders / rangeDays / activeHours;
 
   // Τα KPI υπολογίζονται πάντα σε ΟΛΕΣ τις παραγγελίες· μόνο ο πίνακας κόβεται.
   const historyRows = orders.slice(0, visibleRows);
@@ -462,15 +533,24 @@ export default function Statistics() {
             <div className="p-6 card-glass backdrop-blur-md border border-[#C5A066]/40 rounded-2xl text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col items-center hover:-translate-y-1 transition-transform">
               <div className="flex items-center justify-center gap-2 mb-2 text-[#C5A066] drop-shadow-[0_0_5px_rgba(197,160,102,0.5)] relative z-10">
                 <TrendingUp size={20} />
-                <h3 className="m-0 text-base font-bold">Παραγγελίες ανά Ώρα</h3>
+                <h3 className="m-0 text-base font-bold">{usingDriverRate ? 'Ρυθμός Διανομέα' : 'Παραγγελίες ανά Ώρα'}</h3>
               </div>
               <p className="m-0 text-4xl font-black text-adaptive-light relative z-10">{ordersPerHour.toFixed(2)}</p>
-              <small
-                className="text-adaptive block mt-2 font-medium relative z-10"
-                title={`${kpis.totalOrders} παραγγελίες ÷ ${rangeDays} ${rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ ${activeHours} ώρες λειτουργίας`}
-              >
-                {kpis.totalOrders} ÷ {rangeDays} {rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ {activeHours} ώρες
-              </small>
+              {usingDriverRate ? (
+                <small
+                  className="text-adaptive block mt-2 font-medium relative z-10"
+                  title={`${kpis.totalOrders} παραγγελίες ÷ ${selectedDriverHours.toFixed(1)} πραγματικές ενεργές ώρες βάρδιας στο διάστημα`}
+                >
+                  {kpis.totalOrders} ÷ {selectedDriverHours.toFixed(1)} ενεργές ώρες
+                </small>
+              ) : (
+                <small
+                  className="text-adaptive block mt-2 font-medium relative z-10"
+                  title={`${kpis.totalOrders} παραγγελίες ÷ ${rangeDays} ${rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ ${activeHours} ώρες λειτουργίας${selectedDriver ? ' — χωρίς καταγεγραμμένες ώρες βάρδιας γι\' αυτόν τον διανομέα' : ''}`}
+                >
+                  {kpis.totalOrders} ÷ {rangeDays} {rangeDays === 1 ? 'ημέρα' : 'ημέρες'} ÷ {activeHours} ώρες
+                </small>
+              )}
             </div>
           </div>
 
@@ -524,20 +604,33 @@ export default function Statistics() {
             <div>
               <div className="flex items-center gap-2 mb-4 text-[#C5A066] drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">
                 <TrendingUp size={20} />
-                <h4 className="m-0 font-bold text-lg">{selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων (Χρόνοι)'}</h4>
+                <h4 className="m-0 font-bold text-lg">{selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων'}</h4>
               </div>
               <div className="card-glass backdrop-blur-md rounded-xl border border-[#C5A066]/40 p-2 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
                 {kpis.sortedDrivers.length > 0 ? kpis.sortedDrivers.map((driver, index) => (
-                  <div 
-                    key={driver.name} 
-                    className={`flex justify-between items-center p-3 md:px-4 md:py-3 ${index !== kpis.sortedDrivers.length - 1 ? 'border-b border-[#C5A066]/10' : ''} hover-row-glass transition-colors`}
+                  <div
+                    key={driver.driverId}
+                    className={`flex flex-wrap justify-between items-center gap-2 p-3 md:px-4 md:py-3 ${index !== kpis.sortedDrivers.length - 1 ? 'border-b border-[#C5A066]/10' : ''} hover-row-glass transition-colors`}
                   >
                     <span className="text-adaptive-light">
-                      {selectedDriver ? <b>{driver.name}</b> : <>{index + 1}. <b>{driver.name}</b></>} 
+                      {selectedDriver ? <b>{driver.name}</b> : <>{index + 1}. <b>{driver.name}</b></>}
                       <span className="text-adaptive text-xs ml-1">({driver.deliveries} παρ.)</span>
                     </span>
-                    <span className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driver.avg < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (driver.avg > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
-                      {driver.avg} λ.
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driver.avg < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (driver.avg > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}
+                        title="Μέσος χρόνος παράδοσης"
+                      >
+                        {driver.avg} λ.
+                      </span>
+                      <span
+                        className="font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10"
+                        title={driver.rate !== null
+                          ? `${driver.deliveries} παραγγελίες ÷ ${driver.hours.toFixed(1)} ενεργές ώρες βάρδιας`
+                          : 'Δεν υπάρχουν καταγεγραμμένες ώρες βάρδιας σε αυτό το διάστημα'}
+                      >
+                        {driver.rate !== null ? `${driver.rate.toFixed(1)}/ώρα` : '— /ώρα'}
+                      </span>
                     </span>
                   </div>
                 )) : (
@@ -545,7 +638,7 @@ export default function Statistics() {
                 )}
               </div>
             </div>
-            
+
           </div>
 
           {/* Κουμπί Εμφάνισης/Απόκρυψης Ιστορικού */}
