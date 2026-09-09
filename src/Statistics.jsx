@@ -45,6 +45,10 @@ export default function Statistics() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false); // Νέο state για το ιστορικό
+  // Ποιο στατιστικό δείχνει η κάρτα «Επίδοση Διανομέων»: πρώτα αποδοχή→ολοκλήρωση
+  // (αίτημα πελάτη 09/09/2026) — ξεχωριστό από τη «Μέσος Συνολικός Χρόνος» πιο
+  // πάνω, που μετρά πάντα δημιουργία→ολοκλήρωση και δεν αλλάζει με το toggle.
+  const [driverPerfMode, setDriverPerfMode] = useState('accepted');
   // Πόσες γραμμές έχουν κατέβει μέχρι στιγμής — σε μεγάλα διαστήματα η ανάκτηση
   // κρατάει δευτερόλεπτα και ο διαχειριστής πρέπει να βλέπει ότι κάτι γίνεται.
   const [loadedCount, setLoadedCount] = useState(0);
@@ -251,6 +255,24 @@ export default function Statistics() {
       const storeName = order.stores?.name || 'Άγνωστο';
       storeCounts[storeName] = (storeCounts[storeName] || 0) + 1;
 
+      // Κλειδί το driver_id (όχι το όνομα): χρειάζεται για να ενωθεί παρακάτω
+      // με τις ώρες βάρδιας του driver_distance_report, και αποφεύγει να
+      // συγχωνεύσει δύο διαφορετικούς διανομείς με τυχαία ίδιο ονοματεπώνυμο.
+      // ?? και όχι ||: ένα driver_id 0/'' είναι έγκυρο αναγνωριστικό, όχι «κενό».
+      // Βγαίνει ΕΞΩ από τα if-blocks: μια παραγγελία μπορεί να έχει έγκυρο
+      // accepted_at→completed_at δίχως να μπει στο πρώτο σκέλος (created_at→
+      // completed_at) ή αντίστροφα, και θέλουμε τον διανομέα καταγεγραμμένο
+      // και στις δύο περιπτώσεις.
+      const driverId = order.driver_id ?? 'unknown';
+      const driverName = order.drivers?.full_name || 'Άγνωστος';
+      if (!driverTimes[driverId]) {
+        driverTimes[driverId] = {
+          name: driverName,
+          totalMins: 0, count: 0,
+          acceptedMins: 0, acceptedCount: 0,
+        };
+      }
+
       if (order.created_at && order.completed_at) {
         const tCreate = new Date(order.created_at);
         const tComplete = new Date(order.completed_at);
@@ -264,35 +286,59 @@ export default function Statistics() {
         totalMins += mins;
         validOrdersForTime += 1;
 
-        // Κλειδί το driver_id (όχι το όνομα): χρειάζεται για να ενωθεί παρακάτω
-        // με τις ώρες βάρδιας του driver_distance_report, και αποφεύγει να
-        // συγχωνεύσει δύο διαφορετικούς διανομείς με τυχαία ίδιο ονοματεπώνυμο.
-        // ?? και όχι ||: ένα driver_id 0/'' είναι έγκυρο αναγνωριστικό, όχι «κενό».
-        const driverId = order.driver_id ?? 'unknown';
-        const driverName = order.drivers?.full_name || 'Άγνωστος';
-        if (!driverTimes[driverId]) driverTimes[driverId] = { name: driverName, totalMins: 0, count: 0 };
         driverTimes[driverId].totalMins += mins;
         driverTimes[driverId].count += 1;
+      }
+
+      // Δεύτερο σκέλος επίδοσης (αίτημα πελάτη 09/09/2026): αποδοχή→ολοκλήρωση
+      // αντί για δημιουργία→ολοκλήρωση — δηλαδή ΧΩΡΙΣ την αναμονή μέχρι να
+      // πάρει την παραγγελία ο διανομέας. Ίδια λογική στρογγυλοποίησης μία
+      // φορά στο τέλος, ίδιο μοτίβο με το πάνω σκέλος.
+      if (order.accepted_at && order.completed_at) {
+        const tAccept = new Date(order.accepted_at);
+        const tComplete = new Date(order.completed_at);
+        const acceptedMins = (tComplete - tAccept) / 60000;
+
+        driverTimes[driverId].acceptedMins += acceptedMins;
+        driverTimes[driverId].acceptedCount += 1;
       }
     });
 
     const avgTime = validOrdersForTime > 0 ? (totalMins / validOrdersForTime).toFixed(1) : 0;
     const sortedStores = Object.entries(storeCounts).sort((a, b) => b[1] - a[1]);
-    const sortedDrivers = Object.entries(driverTimes).map(([driverId, data]) => {
+    const driverPerf = Object.entries(driverTimes).map(([driverId, data]) => {
       // Ρυθμός = παραδόσεις ÷ πραγματικές ενεργές ώρες βάρδιας στο ίδιο
       // διάστημα (0 ή άγνωστες ώρες → «—», ποτέ Infinity/παραπλανητικό νούμερο).
       const hours = driverHoursById[driverId];
       const rate = hours && hours > 0 ? data.count / hours : null;
       return {
-        driverId, name: data.name, avg: (data.totalMins / data.count).toFixed(1),
+        driverId, name: data.name,
+        // null όταν δεν υπάρχει έστω μία έγκυρη παραγγελία γι' αυτό το σκέλος
+        // — π.χ. διανομέας με παραγγελίες που δεν έχουν ακόμη accepted_at.
+        avg: data.count > 0 ? (data.totalMins / data.count).toFixed(1) : null,
+        avgAccepted: data.acceptedCount > 0 ? (data.acceptedMins / data.acceptedCount).toFixed(1) : null,
+        // Πάντα το ΣΥΝΟΛΟ ολοκληρωμένων παραδόσεων — ίδιο νούμερο ό,τι στατιστικό
+        // κι αν είναι επιλεγμένο (αίτημα πελάτη 09/09/2026), όχι μόνο όσες
+        // μετράνε στο εκάστοτε σκέλος.
         deliveries: data.count, hours, rate,
       };
-    }).sort((a, b) => a.avg - b.avg);
+    });
+    // Δύο ταξινομημένες λίστες, μία ανά σκέλος επίδοσης — ταχύτερος πρώτος και
+    // στις δύο. null avg πάει στο τέλος αντί να σπάει τη σύγκριση.
+    const sortedDrivers = [...driverPerf].sort((a, b) => (a.avg ?? Infinity) - (b.avg ?? Infinity));
+    const sortedDriversByAcceptance = [...driverPerf].sort((a, b) => (a.avgAccepted ?? Infinity) - (b.avgAccepted ?? Infinity));
 
-    return { avgTime, totalOrders: orders.length, sortedStores, sortedDrivers };
+    return { avgTime, totalOrders: orders.length, sortedStores, sortedDrivers, sortedDriversByAcceptance };
   };
 
   const kpis = calculateKPIs();
+
+  // Ποια λίστα/όρια δείχνει η κάρτα «Επίδοση Διανομέων», ανάλογα με το toggle
+  // αποδοχή/δημιουργία. Χαμηλότερα όρια χρώματος για την αποδοχή→ολοκλήρωση
+  // (αίτημα πελάτη 09/09/2026): αγνοεί την αναμονή για ανάληψη, άρα φυσιολογικά
+  // βγαίνει μικρότερη — με τα ίδια όρια θα έβγαιναν όλοι πράσινοι.
+  const driverPerfList = driverPerfMode === 'accepted' ? kpis.sortedDriversByAcceptance : kpis.sortedDrivers;
+  const driverPerfThresholds = driverPerfMode === 'accepted' ? { good: 8, bad: 15 } : { good: 15, bad: 25 };
 
   // ── Ρυθμός: παραγγελίες ανά ώρα λειτουργίας (αίτημα πελάτη 06/09/2026) ────
   // Ο τύπος όπως τον όρισε: παραγγελίες ÷ ημέρες διαστήματος ÷ ώρες λειτουργίας.
@@ -603,15 +649,41 @@ export default function Statistics() {
 
             {/* Επίδοση Διανομέων */}
             <div>
-              <div className="flex items-center gap-2 mb-4 text-[#C5A066] drop-shadow-[0_0_5px_rgba(197,160,102,0.4)]">
-                <TrendingUp size={20} />
-                <h4 className="m-0 font-bold text-lg">{selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων'}</h4>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2 text-[#C5A066] drop-shadow-[0_0_5px_rgba(197,160,102,0.4)] min-w-0">
+                  <TrendingUp size={20} className="shrink-0" />
+                  <h4 className="m-0 font-bold text-lg truncate">{selectedDriver ? 'Επίδοση Επιλεγμένου Διανομέα' : 'Επίδοση Διανομέων'}</h4>
+                </div>
+                {/* Ίδιο μοτίβο toggle με τη Ράβδοι/Πίτα της Οικονομικής Εκκαθάρισης
+                    (Οφειλές ανά Κατάστημα). Προεπιλογή «Αποδοχή»: αυτό θέλει να δει
+                    πρώτα ο διαχειριστής μπαίνοντας στην οθόνη. */}
+                <div className="flex rounded-lg overflow-hidden border border-[#C5A066]/40 shrink-0">
+                  {[
+                    { key: 'accepted', label: 'Αποδοχή' },
+                    { key: 'created', label: 'Δημιουργία' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setDriverPerfMode(opt.key)}
+                      title={opt.key === 'accepted' ? 'Χρόνος από αποδοχή έως ολοκλήρωση' : 'Χρόνος από δημιουργία έως ολοκλήρωση'}
+                      className={`px-3 py-1 text-xs font-bold transition-colors cursor-pointer ${
+                        driverPerfMode === opt.key
+                          ? 'bg-[#C5A066]/20 text-[#C5A066]'
+                          : 'btn-glass text-adaptive hover:text-[#C5A066]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="card-glass backdrop-blur-md rounded-xl border border-[#C5A066]/40 p-2 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-                {kpis.sortedDrivers.length > 0 ? kpis.sortedDrivers.map((driver, index) => (
+                {driverPerfList.length > 0 ? driverPerfList.map((driver, index) => {
+                  const displayAvg = driverPerfMode === 'accepted' ? driver.avgAccepted : driver.avg;
+                  return (
                   <div
                     key={driver.driverId}
-                    className={`flex flex-wrap justify-between items-center gap-2 p-3 md:px-4 md:py-3 ${index !== kpis.sortedDrivers.length - 1 ? 'border-b border-[#C5A066]/10' : ''} hover-row-glass transition-colors`}
+                    className={`flex flex-wrap justify-between items-center gap-2 p-3 md:px-4 md:py-3 ${index !== driverPerfList.length - 1 ? 'border-b border-[#C5A066]/10' : ''} hover-row-glass transition-colors`}
                   >
                     <span className="text-adaptive-light">
                       {selectedDriver ? <b>{driver.name}</b> : <>{index + 1}. <b>{driver.name}</b></>}
@@ -619,10 +691,10 @@ export default function Statistics() {
                     </span>
                     <span className="flex items-center gap-1.5 shrink-0">
                       <span
-                        className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driver.avg < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (driver.avg > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}
-                        title="Μέσος χρόνος παράδοσης"
+                        className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${displayAvg === null ? 'text-adaptive border-[#C5A066]/40 bg-[#C5A066]/10' : (displayAvg < driverPerfThresholds.good ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (displayAvg > driverPerfThresholds.bad ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10'))}`}
+                        title={driverPerfMode === 'accepted' ? 'Μέσος χρόνος: αποδοχή → ολοκλήρωση' : 'Μέσος χρόνος: δημιουργία → ολοκλήρωση'}
                       >
-                        {driver.avg} λ.
+                        {displayAvg === null ? '—' : `${displayAvg} λ.`}
                       </span>
                       <span
                         className="font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10"
@@ -634,7 +706,8 @@ export default function Statistics() {
                       </span>
                     </span>
                   </div>
-                )) : (
+                  );
+                }) : (
                   <div className="p-4 text-center text-adaptive text-sm italic">Δεν υπάρχουν δεδομένα</div>
                 )}
               </div>
