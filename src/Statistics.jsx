@@ -395,8 +395,8 @@ export default function Statistics() {
   const historyRows = orders.slice(0, visibleRows);
   const hasMoreRows = orders.length > visibleRows;
 
-  // Δεδομένα για γράφημα (Top 5 καταστήματα)
-  const chartData = kpis.sortedStores.slice(0, 5).map(([name, count]) => ({
+  // Δεδομένα για γράφημα (Top 10 καταστήματα)
+  const chartData = kpis.sortedStores.slice(0, 10).map(([name, count]) => ({
     name,
     count
   }));
@@ -620,7 +620,7 @@ export default function Statistics() {
 
           {/* Γράφημα */}
           <div className="mb-8 card-glass backdrop-blur-md p-6 rounded-2xl border border-[#C5A066]/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-            <h4 className="text-center font-bold mb-4 text-[#C5A066]">Όγκος Παραγγελιών ανά Κατάστημα (Top 5)</h4>
+            <h4 className="text-center font-bold mb-4 text-[#C5A066]">Όγκος Παραγγελιών ανά Κατάστημα (Top 10)</h4>
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
