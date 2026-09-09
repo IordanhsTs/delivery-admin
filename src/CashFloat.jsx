@@ -657,12 +657,13 @@ export default function CashFloat() {
 // ~30 διανομείς × λίγες εκατοντάδες γραμμές είναι ασήμαντη δουλειά για τον
 // browser. Ένα καινούργιο RPC θα ήταν μία ακόμη migration για μηδέν κέρδος.
 const DRIVER_PERIODS = [
-  { id: 'today', label: 'Σήμερα',       days: 1 },
-  { id: 'd2',    label: '2 ημέρες',     days: 2 },
-  { id: 'd3',    label: '3 ημέρες',     days: 3 },
-  { id: 'd7',    label: '7 ημέρες',     days: 7 },
-  { id: 'd30',   label: '30 ημέρες',    days: 30 },
-  { id: 'month', label: 'Τρέχων μήνας', month: true },
+  { id: 'today', label: 'Σήμερα',            days: 1 },
+  { id: 'd2',    label: '2 ημέρες',          days: 2 },
+  { id: 'd3',    label: '3 ημέρες',          days: 3 },
+  { id: 'd7',    label: '7 ημέρες',          days: 7 },
+  { id: 'd30',   label: '30 ημέρες',         days: 30 },
+  { id: 'week',  label: 'Τρέχουσα εβδομάδα', week: true },
+  { id: 'month', label: 'Τρέχων μήνας',      month: true },
 ];
 
 function DriverTotals() {
@@ -674,9 +675,13 @@ function DriverTotals() {
 
   const fetchTotals = useCallback(async () => {
     const now = new Date();
-    const from = new Date(now);
-    if (period.month) from.setDate(1);
-    else from.setDate(now.getDate() - (period.days - 1));
+    // «Τρέχουσα εβδομάδα» (αίτημα πελάτη 09/09/2026): ίδιο Δευτέρα→τώρα με το
+    // υπόλοιπο Ταμείο, μέσω του ήδη υπάρχοντος mondayOf() — καμία νέα λογική.
+    const from = period.week ? mondayOf(now) : new Date(now);
+    if (!period.week) {
+      if (period.month) from.setDate(1);
+      else from.setDate(now.getDate() - (period.days - 1));
+    }
 
     setLoading(true);
     const { data, error } = await supabase.rpc('admin_cash_ledger_history', {
