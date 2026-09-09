@@ -337,8 +337,25 @@ export default function Statistics() {
   // αποδοχή/δημιουργία. Χαμηλότερα όρια χρώματος για την αποδοχή→ολοκλήρωση
   // (αίτημα πελάτη 09/09/2026): αγνοεί την αναμονή για ανάληψη, άρα φυσιολογικά
   // βγαίνει μικρότερη — με τα ίδια όρια θα έβγαιναν όλοι πράσινοι.
+  //
+  // `great` (μόνο στην Αποδοχή, αίτημα πελάτη 09/09/2026): κάτω από 12,5΄ =
+  // καλός (πράσινο)· κάτω από 10΄ = απίστευτος (μπλε) — τρίτο, αυστηρότερο
+  // επίπεδο ΠΑΝΩ από το «καλός», όχι εναλλακτικό του. Δεν ζητήθηκε αντίστοιχο
+  // για τη Δημιουργία, οπότε εκείνη μένει με τα δύο επίπεδα.
   const driverPerfList = driverPerfMode === 'accepted' ? kpis.sortedDriversByAcceptance : kpis.sortedDrivers;
-  const driverPerfThresholds = driverPerfMode === 'accepted' ? { good: 8, bad: 15 } : { good: 15, bad: 25 };
+  const driverPerfThresholds = driverPerfMode === 'accepted'
+    ? { great: 10, good: 12.5, bad: 15 }
+    : { good: 15, bad: 25 };
+  // `great` (μπλε) ελέγχεται ΠΡΩΤΑ — είναι η αυστηρότερη υποπερίπτωση του
+  // «καλός», όχι εναλλακτικό όριο· χωρίς αυτή τη σειρά ένας απίστευτος χρόνος
+  // θα έπεφτε στο πράσινο (και αυτό ισχύει) πριν προλάβει να ελεγχθεί το μπλε.
+  const driverPerfBadgeClass = (avg) => {
+    if (avg === null) return 'text-adaptive border-[#C5A066]/40 bg-[#C5A066]/10';
+    if (driverPerfThresholds.great !== undefined && avg < driverPerfThresholds.great) return 'text-[#38BDF8] border-[#38BDF8]/40 bg-[#38BDF8]/10';
+    if (avg < driverPerfThresholds.good) return 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10';
+    if (avg > driverPerfThresholds.bad) return 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10';
+    return 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10';
+  };
 
   // ── Ρυθμός: παραγγελίες ανά ώρα λειτουργίας (αίτημα πελάτη 06/09/2026) ────
   // Ο τύπος όπως τον όρισε: παραγγελίες ÷ ημέρες διαστήματος ÷ ώρες λειτουργίας.
@@ -691,7 +708,7 @@ export default function Statistics() {
                     </span>
                     <span className="flex items-center gap-1.5 shrink-0">
                       <span
-                        className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${displayAvg === null ? 'text-adaptive border-[#C5A066]/40 bg-[#C5A066]/10' : (displayAvg < driverPerfThresholds.good ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (displayAvg > driverPerfThresholds.bad ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10'))}`}
+                        className={`font-bold border px-2.5 py-1 rounded-full text-xs whitespace-nowrap ${driverPerfBadgeClass(displayAvg)}`}
                         title={driverPerfMode === 'accepted' ? 'Μέσος χρόνος: αποδοχή → ολοκλήρωση' : 'Μέσος χρόνος: δημιουργία → ολοκλήρωση'}
                       >
                         {displayAvg === null ? '—' : `${displayAvg} λ.`}
