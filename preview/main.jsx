@@ -15,6 +15,8 @@ import '../src/App.css';
 // Ο φόρτος ζει μέσα στον χάρτη, που θέλει login και Google Maps· εδώ
 // προβάλλεται σκέτος, με ιστορικό που κορυφώνεται στις ~65 παραγγελίες ώστε ο
 // άξονας y να βγάλει 20·40·60·80 — ακριβώς το παράδειγμα του πελάτη.
+// ?dark → σκούρο θέμα (για τον φόρτο)
+if (new URLSearchParams(location.search).has('dark')) document.documentElement.classList.add('dark');
 const WORKLOAD = (() => {
   const shape = { 7: 2, 8: 4, 9: 9, 10: 17, 11: 26, 12: 31, 13: 39, 14: 24,
                   15: 11, 16: 7, 17: 9, 18: 21, 19: 38, 20: 52, 21: 65, 22: 34, 23: 12 };
@@ -25,9 +27,15 @@ const WORKLOAD = (() => {
   }
   return m;
 })();
+// Σημερινές πραγματικές: λίγο πάνω/κάτω από τον μ.ό. μέχρι την τρέχουσα ώρα.
+const TODAY_HOURLY = (() => {
+  const d = new Date().getDay(), c = {};
+  for (let h = 0; h < 24; h++) c[h] = Math.round((WORKLOAD[d][h] || 0) * (0.7 + ((h * 37) % 7) / 10));
+  return c;
+})();
 const WorkloadPreview = () => (
   <div style={{ maxWidth: 340, border: '1px solid var(--border-default)', borderRadius: 12 }}>
-    <WorkloadChart matrix={WORKLOAD} loading={false} isDark={false} />
+    <WorkloadChart matrix={WORKLOAD} todayHourly={TODAY_HOURLY} loading={false} isDark={document.documentElement.classList.contains('dark')} />
   </div>
 );
 

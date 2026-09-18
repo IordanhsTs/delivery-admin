@@ -11,6 +11,7 @@ import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatKm, formatEuro, formatCountdown, orderDurations } from './distance';
 import { DARK_MAP_STYLE } from './mapDarkStyle';
+import { fetchAllRows } from './fetchAll';
 
 // Client feedback 08/13: μετάβαση από Carto/Leaflet σε Google Maps — το native
 // JSON styling επιτρέπει πραγματικά σκούρο χάρτη (dark_all σκότωνε ελληνικά
@@ -611,6 +612,7 @@ export default function LiveMap({ navHidden = false }) {
 
   // ── Στατιστικά φόρτου / χρόνου ──
   const [workloadMatrix, setWorkloadMatrix] = useState(null); // { [jsDay]: { [hour]: avg } }
+  const [todayHourly, setTodayHourly] = useState(null); // { [hour]: πλήθος σήμερα }
   const [workloadMax, setWorkloadMax] = useState(0);
   const [avgDeliveryToday, setAvgDeliveryToday] = useState(null);
   const [ordersToday, setOrdersToday] = useState(0);
@@ -783,6 +785,25 @@ export default function LiveMap({ navHidden = false }) {
     setLoadingWorkload(false);
   };
 
+  // ── Πραγματικός φόρτος ΣΗΜΕΡΑ ανά ώρα (η συμπαγής μπάρα του γραφήματος) ──
+  // Ίδιος ορισμός με το RPC workload_stats, ώστε οι δύο μπάρες να συγκρίνονται
+  // ένα-προς-ένα: ώρα από το `created_at`, όλα εκτός από τις ακυρωμένες.
+  const fetchTodayHourly = async () => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const { data, error } = await fetchAllRows(() => supabase
+      .from('orders')
+      .select('id, created_at')
+      .neq('status', 'cancelled')
+      .gte('created_at', startOfDay.toISOString())
+      .order('id', { ascending: true }));
+    if (error || !data) return;
+    const counts = {};
+    for (let h = 0; h < 24; h++) counts[h] = 0;
+    data.forEach(o => { if (o.created_at) counts[new Date(o.created_at).getHours()] += 1; });
+    setTodayHourly(counts);
+  };
+
   // ── Μέσος χρόνος παράδοσης για ΣΗΜΕΡΑ ──
   const fetchTodayDeliveryStats = async () => {
     const startOfDay = new Date();
@@ -822,6 +843,7 @@ export default function LiveMap({ navHidden = false }) {
         fetchActiveOrders(),
         fetchLastCompletedTimes(),
         fetchTodayDeliveryStats(),
+        fetchTodayHourly(),
       ]);
       if (!silent) toast.success('Τα δεδομένα ανανεώθηκαν.');
     } finally {
@@ -835,6 +857,7 @@ export default function LiveMap({ navHidden = false }) {
     fetchLastCompletedTimes();
     fetchWorkloadStats();
     fetchTodayDeliveryStats();
+    fetchTodayHourly();
 
     releaseDueOrders();
     const releaseTimer = setInterval(releaseDueOrders, 15000);
@@ -908,6 +931,7 @@ export default function LiveMap({ navHidden = false }) {
         fetchActiveOrders();
         fetchLastCompletedTimes();
         fetchTodayDeliveryStats();
+        fetchTodayHourly();
 
         // ΗΧΗΤΙΚΗ ΕΙΔΟΠΟΙΗΣΗ ΓΙΑ ΝΕΑ ΠΑΡΑΓΓΕΛΙΑ
         if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
@@ -1786,6 +1810,7 @@ export default function LiveMap({ navHidden = false }) {
         >
           <WorkloadChart
             matrix={workloadMatrix}
+            todayHourly={todayHourly}
             loading={loadingWorkload}
             isDark={isDark}
           />
@@ -1836,7 +1861,7 @@ function niceScale(max, targetSteps = 4) {
 // — θα στοίβαζε ετικέτες — αλλά πράσινη κουκκίδα στον άξονα.
 // Εξάγεται για το preview harness (preview/main.jsx): ο άξονας y και το
 // άγγιγμα στο κινητό δεν ελέγχονται αλλιώς χωρίς login και Google Maps.
-export function WorkloadChart({ matrix, loading, isDark }) {
+export function WorkloadChart({ matrix, todayHourly, loading, isDark }) {
   const todayDow = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayDow);
   // ΚΙΝΗΤΟ (αίτημα πελάτη 06/09/2026): στην οθόνη αφής δεν υπάρχει hover, οπότε
@@ -1849,9 +1874,15 @@ export function WorkloadChart({ matrix, loading, isDark }) {
   for (let h = START_HOUR; h <= END_HOUR; h++) hours.push(h);
 
   const dayData = (matrix && matrix[selectedDay]) || {};
-  const dayMax = Math.max(...hours.map(h => dayData[h] || 0), 0);
-  const scale = niceScale(dayMax);
+  // ΣΗΜΕΡΑ: αναμενόμενο (μ.ό., σκιασμένη μπάρα πίσω) + πραγματικό (συμπαγής
+  // μπάρα μπροστά). Στις άλλες μέρες δεν υπάρχει «πραγματικό» — μένει ως είχε.
+  const isTodaySel = selectedDay === todayDow;
+  const actual = isTodaySel && todayHourly ? todayHourly : null;
   const currentHour = new Date().getHours();
+  // Η κλίμακα πιάνει και τις δύο σειρές: μια μέρα πάνω από τον μέσο όρο δεν πρέπει
+  // να ξεπερνά το ταβάνι του γραφήματος.
+  const dayMax = Math.max(...hours.map(h => Math.max(dayData[h] || 0, actual ? actual[h] || 0 : 0)), 0);
+  const scale = niceScale(dayMax);
 
   return (
     <div className="p-3">
@@ -1903,7 +1934,9 @@ export function WorkloadChart({ matrix, loading, isDark }) {
             style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}
           >
             {String(pickedHour).padStart(2, '0')}:00–{String((pickedHour + 1) % 24).padStart(2, '0')}:00
-            {' · '}μ.ό. {fmtLoad(dayData[pickedHour] || 0)} παραγγελίες
+            {actual
+              ? <>{' · '}{pickedHour > currentHour ? '—' : actual[pickedHour] || 0} σήμερα / μ.ό. {fmtLoad(dayData[pickedHour] || 0)}</>
+              : <>{' · '}μ.ό. {fmtLoad(dayData[pickedHour] || 0)} παραγγελίες</>}
           </span>
         ) : selectedDay === todayDow ? (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'var(--map-tint-green)', color: 'var(--map-green-deep)' }}>
@@ -1958,6 +1991,67 @@ export function WorkloadChart({ matrix, loading, isDark }) {
                 const pct = scale.top > 0 ? (val / scale.top) * 100 : 0;
                 const isNow = selectedDay === todayDow && h === currentHour;
                 const isPicked = pickedHour === h;
+                if (actual) {
+                  // Οι ώρες που δεν ήρθαν ακόμα δεν έχουν πραγματικό — ΟΧΙ μηδέν,
+                  // αλλιώς θα διαβαζόταν «ήσυχη ώρα» ενώ απλώς δεν έχει έρθει.
+                  const isFuture = h > currentHour;
+                  const act = isFuture ? null : actual[h] || 0;
+                  const actPct = act && scale.top > 0 ? (act / scale.top) * 100 : 0;
+                  const label = `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00 · ${act === null ? 'δεν έχει έρθει ακόμα' : `${act} σήμερα`} · μ.ό. ${fmtLoad(val)}`;
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setPickedHour(prev => (prev === h ? null : h))}
+                      className="relative flex-1 min-w-0 h-full cursor-pointer"
+                      title={label}
+                      aria-label={label}
+                      style={{ opacity: pickedHour === null || isPicked ? 1 : 0.45 }}
+                    >
+                      {/* Αναμενόμενο (μ.ό.): ουδέτερη σκιά, ίδιο σχήμα με τη μπάρα —
+                          «δοχείο» που γεμίζει όσο έρχονται οι παραγγελίες της ώρας. */}
+                      {val > 0 && (
+                        <div
+                          className="absolute inset-x-0 bottom-0 rounded-t-[3px] transition-all duration-300"
+                          style={{
+                            height: `${Math.max(pct, 4)}%`,
+                            minHeight: 3,
+                            background: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)',
+                            boxShadow: isPicked ? '0 0 0 1px var(--accent)' : 'none',
+                          }}
+                        />
+                      )}
+                      {/* Πραγματικό σήμερα: η γνωστή χρυσή μπάρα, μπροστά */}
+                      {act > 0 && (
+                        <div
+                          className="absolute inset-x-0 bottom-0 rounded-t-[3px] transition-all duration-300"
+                          style={{
+                            height: `${Math.max(actPct, 4)}%`,
+                            minHeight: 3,
+                            background: isNow
+                              ? 'linear-gradient(180deg, var(--map-green), var(--map-green-deep))'
+                              : 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))',
+                            boxShadow: isPicked
+                              ? '0 0 0 1px var(--accent)'
+                              : isNow ? '0 0 8px var(--map-glow-green-soft)' : 'none',
+                          }}
+                        />
+                      )}
+                      {/* Πάνω από τον μ.ό. η σκιά κρύβεται πίσω από τη μπάρα — μια
+                          λεπτή εγκοπή κρατά ορατό πού ήταν το «αναμενόμενο». */}
+                      {act > val && val > 0 && (
+                        <div
+                          className="absolute inset-x-0 pointer-events-none"
+                          style={{
+                            bottom: `${pct}%`,
+                            height: 1.5,
+                            background: isDark ? 'rgba(15,23,42,0.55)' : 'rgba(255,255,255,0.85)',
+                          }}
+                        />
+                      )}
+                    </button>
+                  );
+                }
                 return (
                   <button
                     key={h}
@@ -2048,6 +2142,19 @@ export function WorkloadChart({ matrix, loading, isDark }) {
               );
             })}
           </div>
+
+          {actual && (
+            <div className="flex items-center justify-center gap-3 mt-2 text-[10px] font-semibold" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+              <span className="flex items-center gap-1">
+                <span style={{ width: 8, height: 10, borderRadius: 2, background: 'linear-gradient(180deg, var(--map-gold-light), var(--map-gold))' }} />
+                Σήμερα
+              </span>
+              <span className="flex items-center gap-1">
+                <span style={{ width: 8, height: 10, borderRadius: 2, background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)' }} />
+                Μέσος όρος
+              </span>
+            </div>
+          )}
         </>
       )}
     </div>
