@@ -7,6 +7,7 @@ import BillingDashboard from '../src/BillingDashboard.jsx';
 import CashFloat from '../src/CashFloat.jsx';
 import CreateOrder from '../src/CreateOrder.jsx';
 import { WorkloadChart } from '../src/LiveMap.jsx';
+import NavMockup from './NavMockup.jsx';
 import '../src/index.css';
 import '../src/App.css';
 
@@ -39,7 +40,7 @@ const WorkloadPreview = () => (
   </div>
 );
 
-const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, new: CreateOrder, workload: WorkloadPreview };
+const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, new: CreateOrder, workload: WorkloadPreview, nav: NavMockup };
 const Tab = TABS[new URLSearchParams(location.search).get('tab')] || Statistics;
 
 createRoot(document.getElementById('root')).render(

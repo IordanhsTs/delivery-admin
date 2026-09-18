@@ -49,6 +49,7 @@ const ROWS = Array.from({ length: N }, (_, i) => {
     address: `Οδός Δοκιμής ${i % 120 + 1}, Φλώρινα`,
     distance_km: 1 + (i % 9) * 0.7,
     surcharge: 0,
+    payment_method: i % 5 === 0 ? null : (i % 2 === 0 ? 'cash' : 'card'),
     store_id: storeId,
     driver_id: driverId,
     stores: {

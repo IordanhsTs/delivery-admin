@@ -11,10 +11,9 @@ import Schedule from './Schedule';
 import Announcements from './Announcements';
 import LiveMap from './LiveMap';
 import StoreManagement from './StoreManagement';
-import Statistics from './Statistics';
+import StatisticsHub from './StatisticsHub';
 import CreateOrder from './CreateOrder';
 import Messages from './Messages';
-import OrderSearch from './OrderSearch';
 import Login from './Login';
 import { useStoreMessages } from './useStoreMessages';
 import BackupModeBanner from './BackupModeBanner';
@@ -109,17 +108,18 @@ const MessageSquareIcon = () => (
   </svg>
 );
 
-const SearchIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-  </svg>
-);
-
 const MoreIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>
+  </svg>
+);
+
+// Βελάκι accordion για τις 3 ομαδοποιημένες κατηγορίες.
+const ChevronDownIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
   </svg>
 );
 
@@ -171,35 +171,77 @@ const BikeIcon = () => (
 // δεν αξίζει να αντιγραφεί με το χέρι το ίδιο glyph.
 const WalletIcon = () => <Wallet size={20} />;
 
+// ── 3 νέα εικονίδια, μόνο για τις ομαδοποιημένες κατηγορίες (18/09/2026) ───
+const ZapIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+  </svg>
+);
+const GearIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
+const EuroIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 10h12"/><path d="M4 14h9"/><path d="M17 5.32a7.57 7.57 0 0 0-1-.32C11.5 5 9 7.5 9 12s2.5 7 7 6.68a7.57 7.57 0 0 0 1-.32"/>
+  </svg>
+);
+
+// ── Δομή μενού σε 5 κατηγορίες (αίτημα πελάτη 18/09/2026) ──────────────────
+// Οι 12 παλιές, επίπεδες καρτέλες ομαδοποιήθηκαν σε 5: ο Χάρτης και τα
+// Στατιστικά (πλέον με την Αναζήτηση ΜΕΣΑ τους, βλ. StatisticsHub) μένουν
+// μόνες τους· οι υπόλοιπες 9 μπαίνουν κάτω από 3 ανοιγόμενες κατηγορίες.
+// Το Ταμείο ζει στα Οικονομικά (όχι στη Λειτουργία) — είναι κίνηση μετρητών,
+// πιο κοντά στην Εκκαθάριση/Καύσιμα.
 const NAV_ITEMS = [
-  { id: 'map',          Icon: MapIcon,      shortLabel: 'Χάρτης',     fullLabel: 'Live Χάρτης' },
-  { id: 'create-order', Icon: PlusIcon,     shortLabel: 'Νέα Παρ.',   fullLabel: 'Νέα Παραγγελία' },
-  { id: 'search',       Icon: SearchIcon,   shortLabel: 'Αναζήτηση',  fullLabel: 'Αναζήτηση' },
-  { id: 'messages',     Icon: MessageSquareIcon, shortLabel: 'Μηνύματα', fullLabel: 'Μηνύματα' },
-  { id: 'schedule',     Icon: CalendarIcon, shortLabel: 'Πρόγραμμα',  fullLabel: 'Πρόγραμμα εβδομάδας' },
-  { id: 'announcements',Icon: MegaphoneIcon, shortLabel: 'Ανακοιν.',  fullLabel: 'Ανακοινώσεις' },
-  { id: 'billing',      Icon: ReceiptIcon,  shortLabel: 'Εκκαθάριση', fullLabel: 'Εκκαθάριση' },
-  { id: 'fuel',         Icon: FuelIcon,     shortLabel: 'Καύσιμα',    fullLabel: 'Χιλιόμετρα & Καύσιμα' },
-  { id: 'cash-float',   Icon: WalletIcon,   shortLabel: 'Ταμείο',     fullLabel: 'Ταμείο' },
-  { id: 'fleet',        Icon: BikeIcon,     shortLabel: 'Μηχανές',    fullLabel: 'Στόλος μηχανών' },
-  { id: 'stores',       Icon: BuildingIcon, shortLabel: 'Διαχείριση', fullLabel: 'Διαχείριση' },
-  { id: 'stats',        Icon: BarChartIcon, shortLabel: 'Στατιστικά', fullLabel: 'Στατιστικά' },
+  { id: 'map', Icon: MapIcon, fullLabel: 'Live Χάρτης' },
+  {
+    id: 'actions', Icon: ZapIcon, fullLabel: 'Ενέργειες',
+    children: [
+      { id: 'create-order', Icon: PlusIcon,          fullLabel: 'Νέα Παραγγελία' },
+      { id: 'messages',     Icon: MessageSquareIcon, fullLabel: 'Μηνύματα' },
+    ],
+  },
+  { id: 'stats', Icon: BarChartIcon, fullLabel: 'Στατιστικά' },
+  {
+    id: 'operations', Icon: GearIcon, fullLabel: 'Λειτουργία',
+    children: [
+      { id: 'stores',        Icon: BuildingIcon,  fullLabel: 'Διαχείριση' },
+      { id: 'announcements', Icon: MegaphoneIcon, fullLabel: 'Ανακοινώσεις' },
+      { id: 'fleet',         Icon: BikeIcon,      fullLabel: 'Στόλος μηχανών' },
+      { id: 'schedule',      Icon: CalendarIcon,  fullLabel: 'Πρόγραμμα εβδομάδας' },
+    ],
+  },
+  {
+    id: 'finance', Icon: EuroIcon, fullLabel: 'Οικονομικά',
+    children: [
+      { id: 'billing',     Icon: ReceiptIcon, fullLabel: 'Εκκαθάριση' },
+      { id: 'cash-float',  Icon: WalletIcon,  fullLabel: 'Ταμείο' },
+      { id: 'fuel',        Icon: FuelIcon,    fullLabel: 'Χιλιόμετρα & Καύσιμα' },
+    ],
+  },
 ];
 
-// ΚΙΝΗΤΟ: μόνο οι τρεις λειτουργίες της καθημερινής ροής μένουν στη μπάρα· τα
-// υπόλοιπα μαζεύονται πίσω από το κουμπί «Περισσότερα». Επτά εικονίδια σε μια
-// οθόνη τηλεφώνου γίνονταν οριζόντιο scroll και έμοιαζαν ακανόνιστα.
-const MOBILE_PRIMARY_IDS = ['map', 'create-order', 'messages'];
+// Όλα τα «φύλλα» (ό,τι αντιστοιχεί σε πραγματική καρτέλα περιεχομένου), σε μία
+// επίπεδη λίστα — βολεύει το VIEW_COMPONENTS, το NAV_IDS και το εύρεσε-γονιό.
+const NAV_LEAVES = NAV_ITEMS.flatMap((n) => (n.children ? n.children : [n]));
+const findNavParent = (childId) => NAV_ITEMS.find((n) => n.children?.some((c) => c.id === childId));
 
 // Φράχτης για την επαναφορά ενότητας μετά από reload: μια αποθηκευμένη τιμή που
-// δεν υπάρχει πια (μετονομασία ενότητας σε νέα έκδοση) θα έδειχνε κενή οθόνη.
-const NAV_IDS = NAV_ITEMS.map((item) => item.id);
+// δεν υπάρχει πια (μετονομασία ενότητας σε νέα έκδοση, π.χ. το παλιό 'search'
+// αυτόνομο tab) θα έδειχνε κενή οθόνη.
+const NAV_IDS = NAV_LEAVES.map((item) => item.id);
 
 // Ο χάρτης ('map') μένει εκτός αυτού του object — φορτώνεται ξεχωριστά και μόνιμα
 // mounted στο render (βλ. παρακάτω), ώστε να μη χάνει θέση/zoom σε κάθε tab switch.
+// Η Αναζήτηση δεν έχει πια δικό της κλειδί: ζει ΜΕΣΑ στο StatisticsHub.
 const VIEW_COMPONENTS = {
   'create-order':  <CreateOrder />,
-  'search':        <OrderSearch />,
   'messages':      <Messages />,
   'schedule':      <Schedule />,
   'announcements': <Announcements />,
@@ -208,14 +250,25 @@ const VIEW_COMPONENTS = {
   'cash-float':    <CashFloat />,
   'fleet':         <FleetVehicles />,
   'stores':        <StoreManagement />,
-  'stats':         <Statistics />,
+  'stats':         <StatisticsHub />,
 };
 
 // Κόκκινη κουκκίδα με το πλήθος αδιάβαστων μηνυμάτων από καταστήματα. Ζει σε δικό
 // του component ώστε το realtime subscription να στήνεται ΜΟΝΟ αφού συνδεθεί ο admin.
-function UnreadMessagesBadge() {
+// `dot`: χωρίς αριθμό, μόνο κουκκίδα — για το εικονίδιο της κατηγορίας
+// «Ενέργειες» όταν είναι μαζεμένη (ο αριθμός μένει στο ίδιο το «Μηνύματα»).
+function UnreadMessagesBadge({ dot = false }) {
   const { unreadCount } = useStoreMessages();
   if (!unreadCount) return null;
+  if (dot) {
+    return (
+      <span
+        className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full"
+        style={{ backgroundColor: 'var(--danger)' }}
+        title={`${unreadCount} αδιάβαστα μηνύματα από καταστήματα`}
+      />
+    );
+  }
   return (
     <span
       className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center"
@@ -249,7 +302,15 @@ export default function App() {
   // ΟΧΙ σκέτο 'map': μετά από pull-to-refresh στο κινητό ο διαχειριστής πρέπει να
   // ξαναβρεί την ενότητα που κοίταζε, όχι τον χάρτη (βλ. restoreTab στο backNav).
   const [activeTab, setActiveTab] = useState(() => restoreTab('map', NAV_IDS));
-  const [moreOpen, setMoreOpen] = useState(false);
+  // Ποιες από τις 3 ομαδοποιημένες κατηγορίες είναι ανοιχτές στο DESKTOP μενού
+  // (accordion, πάνω από μία μπορεί να είναι ανοιχτή ταυτόχρονα).
+  const [expandedGroups, setExpandedGroups] = useState({});
+  // Ποια κατηγορία έχει ανοιχτή τη μικρή λίστα παιδιών στο ΚΙΝΗΤΟ — μόνο μία
+  // κάθε φορά, σαν μικρό αναδυόμενο κάτω από το εικονίδιό της.
+  const [mobileOpenGroup, setMobileOpenGroup] = useState(null);
+  // Θέμα + Αποσύνδεση στο κινητό: δεν είναι κατηγορία περιεχομένου, οπότε ζουν
+  // σε δικό τους μικρό μενού αντί να στριμώχνονται στη βασική μπάρα.
+  const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
   // ΜΕΝΟΥ ΑΝΑΔΥΟΜΕΝΟ ΣΤΟΝ ΧΑΡΤΗ (desktop): στον χάρτη το μενού μαζεύεται με το κουμπί
   // της μπάρας και ο χώρος που περισσεύει πάει στη δεξιά στήλη, ώστε «Ενεργές» και
   // «Αποδεκτές» να χωρέσουν δίπλα-δίπλα. Όσο είναι ανοιχτό, η οθόνη δείχνει ακριβώς
@@ -265,8 +326,22 @@ export default function App() {
   // αντί να κλείνει την εφαρμογή. Το `goToTab` αντικαθιστά το `setActiveTab` σε
   // ΟΛΑ τα κουμπιά του μενού — μόνο έτσι γράφεται η ενότητα στο ιστορικό.
   const goToTab = useSectionHistory({ enabled: isAuthenticated, activeTab, setActiveTab });
-  // Το αναδυόμενο μενού «Περισσότερα» κλείνει πρώτο, πριν αλλάξει ενότητα.
-  useBackClose(moreOpen, () => setMoreOpen(false));
+  // Τα δύο αναδυόμενα μενού του κινητού κλείνουν πρώτα, πριν αλλάξει ενότητα
+  // (ίδιο μοτίβο με το παλιό «Περισσότερα»· βλ. backNav.js).
+  useBackClose(!!mobileOpenGroup, () => setMobileOpenGroup(null));
+  useBackClose(mobileAccountOpen, () => setMobileAccountOpen(false));
+
+  // Επιλογή καρτέλας: αν ανήκει σε ομαδοποιημένη κατηγορία, η κατηγορία ανοίγει
+  // αυτόματα (desktop accordion) — έτσι ο διαχειριστής βλέπει πάντα «πού είναι».
+  const selectTab = (id) => {
+    goToTab(id);
+    const parent = findNavParent(id);
+    if (parent) setExpandedGroups((e) => ({ ...e, [parent.id]: true }));
+    setMobileOpenGroup(null);
+    setMobileAccountOpen(false);
+  };
+  const toggleGroup = (id) => setExpandedGroups((e) => ({ ...e, [id]: !e[id] }));
+  const toggleMobileGroup = (id) => setMobileOpenGroup((g) => (g === id ? null : id));
 
   const isDark = theme === 'dark';
   const navHidden = activeTab === 'map' && !navOpenOnMap;
@@ -403,76 +478,103 @@ export default function App() {
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        {/* ── MOBILE TOP BAR: λογότυπο + 3 βασικές λειτουργίες + «Περισσότερα» ── */}
+        {/* ── MOBILE TOP BAR: ΟΛΕΣ οι 5 κατηγορίες + λογαριασμός ──
+            18/09/2026: 5 κατηγορίες (κάτω από τις παλιές 11-12) χωράνε πλέον
+            απευθείας στη μπάρα, χωρίς «Περισσότερα». Οι 3 με παιδιά ανοίγουν
+            μια μικρή λίστα ακριβώς από κάτω τους.
+            Χωρίς το λογότυπο (αίτημα χρήστη 18/09/2026): η μόνη του δουλειά
+            ήταν manual refresh, που ήδη καλύπτεται από το pull-to-refresh της
+            εγκατεστημένης εφαρμογής (βλ. backNav.js) — έδινε χώρο σε κάτι που
+            διπλασίαζε λειτουργία, όχι σε κάτι χρήσιμο. Μένει ΜΟΝΟ στο desktop
+            (εκεί δεν υπάρχει pull-to-refresh gesture). */}
         <div className="md:hidden relative">
           <div
-            className="flex items-center gap-2 px-2 py-2 border-b"
+            className="flex items-center gap-1 px-1.5 py-2 border-b"
             style={{ borderColor: 'var(--border-default)' }}
           >
-            {/* Logo (refresh) — ίδιο ύψος με τα κουμπιά λειτουργιών */}
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white text-lg"
-              style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 2px 8px var(--accent-muted)' }}
-              title="Ανανέωση σελίδας"
-            >
-              V
-            </button>
-
-            <nav className="flex-1 flex items-stretch gap-1.5">
-              {NAV_ITEMS.filter(item => MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, shortLabel }) => (
-                <button
-                  key={id}
-                  onClick={() => { goToTab(id); setMoreOpen(false); }}
-                  className="relative flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200"
-                  style={getNavStyle(id)}
-                >
-                  <Icon />
-                  {id === 'messages' && <UnreadMessagesBadge />}
-                  {id === 'cash-float' && <LowCashFloatBadge />}
-                  <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{shortLabel}</span>
-                </button>
-              ))}
-
-              <button
-                onClick={() => setMoreOpen(v => !v)}
-                className="relative flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200"
-                style={moreOpen || !MOBILE_PRIMARY_IDS.includes(activeTab) ? getNavStyle(activeTab) : getNavStyle(null)}
-              >
-                <MoreIcon />
-                <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Περισσότερα</span>
-              </button>
+            <nav className="flex-1 flex items-stretch gap-1">
+              {NAV_ITEMS.map((item) => {
+                const isGroup = !!item.children;
+                let style;
+                if (isGroup) {
+                  style = mobileOpenGroup === item.id
+                    ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 2px 8px var(--accent-muted)' }
+                    : findNavParent(activeTab)?.id === item.id
+                      ? { background: 'var(--accent-muted)', color: 'var(--accent)' }
+                      : { background: 'transparent', color: 'var(--text-secondary)' };
+                } else {
+                  style = getNavStyle(item.id);
+                }
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => (isGroup ? toggleMobileGroup(item.id) : selectTab(item.id))}
+                    className="relative flex-1 h-11 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-200 px-0.5"
+                    style={style}
+                  >
+                    <span className="relative flex items-center">
+                      <item.Icon />
+                      {/* Κουκκίδα στην ίδια την κατηγορία όταν είναι μαζεμένη — ο
+                          αριθμός/κουκκίδα του παιδιού φαίνεται όταν ανοίξει. */}
+                      {item.id === 'actions' && mobileOpenGroup !== 'actions' && <UnreadMessagesBadge dot />}
+                      {item.id === 'finance' && mobileOpenGroup !== 'finance' && <LowCashFloatBadge />}
+                    </span>
+                    <span className="text-[9px] font-semibold leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
+                      {(item.fullLabel || '').split(' ')[0]}
+                    </span>
+                  </button>
+                );
+              })}
             </nav>
+
+            {/* Θέμα + Αποσύνδεση — δεν είναι κατηγορία περιεχομένου, δικό τους κουμπί. */}
+            <button
+              onClick={() => setMobileAccountOpen(v => !v)}
+              className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+              style={mobileAccountOpen ? { background: 'var(--accent-muted)', color: 'var(--accent)' } : { color: 'var(--text-muted)' }}
+              title="Λογαριασμός"
+            >
+              <MoreIcon />
+            </button>
           </div>
 
-          {moreOpen && (
+          {/* Λίστα παιδιών της ανοιχτής κατηγορίας */}
+          {mobileOpenGroup && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+              <div className="fixed inset-0 z-30" onClick={() => setMobileOpenGroup(null)} />
               <div
-                className="absolute right-2 top-full mt-1 z-40 w-56 rounded-2xl overflow-hidden p-1.5 card-surface"
-                style={{
-                  backgroundColor: 'var(--bg-card)',
-                  border: '1px solid var(--border-default)',
-                  boxShadow: 'var(--shadow-xl)',
-                }}
+                className="absolute left-2 right-2 top-full mt-1 z-40 rounded-2xl overflow-hidden p-1.5 card-surface"
+                style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xl)' }}
               >
-                {NAV_ITEMS.filter(item => !MOBILE_PRIMARY_IDS.includes(item.id)).map(({ id, Icon, fullLabel, shortLabel }) => (
+                {NAV_ITEMS.find((n) => n.id === mobileOpenGroup)?.children.map(({ id, Icon, fullLabel }) => (
                   <button
                     key={id}
-                    onClick={() => { goToTab(id); setMoreOpen(false); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
+                    onClick={() => selectTab(id)}
+                    className="relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
                     style={getNavStyle(id)}
                   >
-                    <Icon />
-                    <span className="text-sm font-semibold">{fullLabel || shortLabel}</span>
+                    <span className="relative flex items-center">
+                      <Icon />
+                      {id === 'messages' && <UnreadMessagesBadge />}
+                      {id === 'cash-float' && <LowCashFloatBadge />}
+                    </span>
+                    <span className="text-sm font-semibold">{fullLabel}</span>
                   </button>
                 ))}
+              </div>
+            </>
+          )}
 
-                <div className="h-px my-1.5" style={{ backgroundColor: 'var(--border-default)' }} />
-
+          {/* Θέμα + Αποσύνδεση */}
+          {mobileAccountOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setMobileAccountOpen(false)} />
+              <div
+                className="absolute right-2 top-full mt-1 z-40 w-56 rounded-2xl overflow-hidden p-1.5 card-surface"
+                style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xl)' }}
+              >
                 <button
-                  onClick={() => { toggleTheme(); setMoreOpen(false); }}
+                  onClick={() => { toggleTheme(); setMobileAccountOpen(false); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left"
                   style={{ color: 'var(--text-secondary)' }}
                 >
@@ -551,38 +653,76 @@ export default function App() {
           )}
         </div>
 
-        {/* Nav items */}
-        <nav className="hidden md:flex md:flex-col p-3 gap-1 md:flex-1">
-          {NAV_ITEMS.map(({ id, Icon, shortLabel, fullLabel }) => (
-            <button
-              key={id}
-              onClick={() => goToTab(id)}
-              className="relative flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 py-2.5 px-2 md:px-4 rounded-xl transition-all duration-200 min-w-[64px] md:min-w-0 md:w-full text-center md:text-left"
-              style={getNavStyle(id)}
-              onMouseEnter={e => {
-                if (activeTab !== id) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-muted)';
-                  e.currentTarget.style.color = 'var(--accent)';
-                }
-              }}
-              onMouseLeave={e => {
-                if (activeTab !== id) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.color = 'var(--text-secondary)';
-                }
-              }}
-            >
-              <span className="relative flex items-center">
-                <Icon />
-                {id === 'messages' && <UnreadMessagesBadge />}
-                {id === 'cash-float' && <LowCashFloatBadge />}
-              </span>
-              <span className="text-[10px] md:text-sm font-semibold leading-none">
-                <span className="md:hidden">{shortLabel}</span>
-                <span className="hidden md:inline">{fullLabel || shortLabel}</span>
-              </span>
-            </button>
-          ))}
+        {/* Nav items — 5 κατηγορίες, 3 με ανοιγόμενα παιδιά (accordion) */}
+        <nav className="hidden md:flex md:flex-col p-3 gap-1 md:flex-1 overflow-y-auto">
+          {NAV_ITEMS.map((item) => {
+            if (!item.children) {
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => selectTab(item.id)}
+                  className="relative flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200 w-full text-left"
+                  style={getNavStyle(item.id)}
+                  onMouseEnter={e => {
+                    if (activeTab !== item.id) {
+                      e.currentTarget.style.backgroundColor = 'var(--accent-muted)';
+                      e.currentTarget.style.color = 'var(--accent)';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (activeTab !== item.id) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                    }
+                  }}
+                >
+                  <item.Icon />
+                  <span className="text-sm font-semibold">{item.fullLabel}</span>
+                </button>
+              );
+            }
+
+            const isOpen = !!expandedGroups[item.id];
+            const parentActive = findNavParent(activeTab)?.id === item.id;
+            return (
+              <div key={item.id}>
+                <button
+                  onClick={() => toggleGroup(item.id)}
+                  className="relative w-full flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200 text-left"
+                  style={parentActive ? { background: 'var(--accent-muted)', color: 'var(--accent)' } : { background: 'transparent', color: 'var(--text-secondary)' }}
+                >
+                  <span className="relative flex items-center">
+                    <item.Icon />
+                    {item.id === 'actions' && !isOpen && <UnreadMessagesBadge dot />}
+                    {item.id === 'finance' && !isOpen && <LowCashFloatBadge />}
+                  </span>
+                  <span className="text-sm font-semibold flex-1">{item.fullLabel}</span>
+                  <span style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                    <ChevronDownIcon />
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="pl-4 mt-0.5 mb-1 flex flex-col gap-0.5 border-l ml-6" style={{ borderColor: 'var(--border-default)' }}>
+                    {item.children.map(({ id, Icon, fullLabel }) => (
+                      <button
+                        key={id}
+                        onClick={() => selectTab(id)}
+                        className="relative flex items-center gap-3 py-2 px-3 rounded-xl transition-all duration-150 text-left"
+                        style={getNavStyle(id)}
+                      >
+                        <span className="relative flex items-center">
+                          <Icon />
+                          {id === 'messages' && <UnreadMessagesBadge />}
+                          {id === 'cash-float' && <LowCashFloatBadge />}
+                        </span>
+                        <span className="text-sm font-medium">{fullLabel}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Bottom: theme toggle + profile + logout (desktop only) */}

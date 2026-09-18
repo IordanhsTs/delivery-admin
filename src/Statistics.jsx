@@ -181,7 +181,7 @@ export default function Statistics() {
     const buildQuery = () => {
       let q = supabase
         .from('orders')
-        .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, store_id, driver_id, stores!inner ( name, category ), drivers ( full_name )')
+        .select('id, created_at, accepted_at, completed_at, status, address, distance_km, surcharge, payment_method, store_id, driver_id, stores!inner ( name, category ), drivers ( full_name )')
         .eq('status', 'completed')
         .gte('created_at', startIso)
         .lte('created_at', endIso)
@@ -411,6 +411,19 @@ export default function Statistics() {
     if (!isoString) return '-';
     return new Date(isoString).toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit' });
   };
+
+  // Ετικέτα τρόπου πληρωμής στο ιστορικό (αίτημα πελάτη 18/09/2026). Παλιές
+  // παραγγελίες μπορεί να μην έχουν καταγεγραμμένο payment_method.
+  // Μετρητά = πράσινο, Κάρτα = μπλε (αίτημα πελάτη) — ίδια χρώματα με τα
+  // υπόλοιπα badges του αρχείου (#38EF7D / #38BDF8).
+  const paymentLabel = (method) => {
+    if (method === 'cash') return 'Μετρητά';
+    if (method === 'card') return 'Κάρτα';
+    return null;
+  };
+  const paymentBadgeClass = (method) => method === 'card'
+    ? 'text-[#38BDF8] border-[#38BDF8]/40 bg-[#38BDF8]/10'
+    : 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10';
 
   return (
     <motion.div 
@@ -781,7 +794,14 @@ export default function Statistics() {
                             <div className="text-xs">{formatTime(order.created_at)}</div>
                           </td>
                           <td className="p-4">
-                            <div className="font-bold text-adaptive-light">{order.stores?.name}</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="font-bold text-adaptive-light">{order.stores?.name}</div>
+                              {paymentLabel(order.payment_method) && (
+                                <span className={`text-[10px] font-bold border px-2 py-0.5 rounded-full whitespace-nowrap ${paymentBadgeClass(order.payment_method)}`}>
+                                  {paymentLabel(order.payment_method)}
+                                </span>
+                              )}
+                            </div>
                             <div className="text-adaptive text-xs mt-0.5 flex items-center gap-1 flex-wrap">
                               <MapPin size={12} /> <span className="text-adaptive">{order.address || 'Μη διαθέσιμη διεύθυνση'}</span>
                               {order.distance_km !== null && order.distance_km !== undefined && (
@@ -816,7 +836,14 @@ export default function Statistics() {
                   return (
                     <div key={order.id} className="p-4 hover-row-glass">
                       <div className="flex justify-between items-start mb-2">
-                        <div className="font-bold text-adaptive-light text-[15px]">{order.stores?.name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="font-bold text-adaptive-light text-[15px]">{order.stores?.name}</div>
+                          {paymentLabel(order.payment_method) && (
+                            <span className={`text-[10px] font-bold border px-2 py-0.5 rounded-full whitespace-nowrap ${paymentBadgeClass(order.payment_method)}`}>
+                              {paymentLabel(order.payment_method)}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-right">
                           <span className={`border px-2 py-0.5 rounded text-[11px] font-bold ${mins < 15 ? 'text-[#38EF7D] border-[#38EF7D]/40 bg-[#38EF7D]/10' : (mins > 25 ? 'text-[#9D4EDD] border-[#9D4EDD]/40 bg-[#9D4EDD]/10' : 'text-[#C5A066] border-[#C5A066]/40 bg-[#C5A066]/10')}`}>
                             {mins} λεπτά
