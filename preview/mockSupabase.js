@@ -84,6 +84,9 @@ function builder(table) {
       if (table === 'drivers') {
         return { data: DRIVERS.map((full_name, id) => ({ id, full_name })), error: null };
       }
+      if (table === 'fuel_settings') {
+        return { data: [{ l_per_100km: 4, price_per_l: 1.8 }], error: null };
+      }
       if (table === 'schedule_settings') {
         return { data: [{ open_hour: 7, close_hour: 25 }], error: null };
       }
@@ -152,7 +155,62 @@ const RPCS = {
   ],
 };
 
-supabase.rpc = (name) => Promise.resolve({ data: RPCS[name] ?? [], error: null });
+// ── Χιλιόμετρα & Καύσιμα: βάρδιες + διόρθωση (19/09/2026) ─────────────────
+// Stateful: η «διόρθωση» αλλάζει τη βάρδια και η αναφορά ξαναϋπολογίζεται, ώστε
+// να φαίνεται ολόκληρη η ροή. Τα τρία σενάρια αντιστοιχούν σε αυτά που ζητήθηκαν:
+//   • Φώτης: το ίδιο το περιστατικό (τελική 250.300 αντί 25.300 → 225.150 χλμ)
+//   • Λεωνίδας: ΜΟΝΗ βάρδια της εβδομάδας, «ύποπτη» (0 χλμ) — δεν πρέπει να χαθεί από τη λίστα
+//   • Ιορδάνης: κανονικές βάρδιες + μία χωρίς τελική ένδειξη
+const hAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
+const MOCK_SHIFTS = [
+  { shift_id: 's1', driver_id: 6, driver_name: DRIVERS[6], vehicle_id: 'v1', vehicle_code: 'moto1', started_at: hAgo(6), ended_at: hAgo(1),
+    start_odometer_km: 25150, end_odometer_km: 250300, distance_km: 225150, source: 'odometer', odometer_source: 'declared', flag: 'over_cap', corrections: [] },
+  { shift_id: 's2', driver_id: 6, driver_name: DRIVERS[6], vehicle_id: 'v1', vehicle_code: 'moto1', started_at: hAgo(30), ended_at: hAgo(25),
+    start_odometer_km: 25000, end_odometer_km: 25150, distance_km: 150, source: 'odometer', odometer_source: 'declared', flag: null, corrections: [] },
+  { shift_id: 's3', driver_id: 3, driver_name: DRIVERS[3], vehicle_id: 'v2', vehicle_code: 'moto2', started_at: hAgo(52), ended_at: hAgo(47),
+    start_odometer_km: 25700, end_odometer_km: 26500, distance_km: 0, source: 'odometer', odometer_source: 'suspect', flag: 'suspect', corrections: [] },
+  { shift_id: 's4', driver_id: 1, driver_name: DRIVERS[1], vehicle_id: 'v3', vehicle_code: 'moto3', started_at: hAgo(8), ended_at: hAgo(3),
+    start_odometer_km: 18040, end_odometer_km: 18195, distance_km: 155, source: 'odometer', odometer_source: 'declared', flag: null, corrections: [] },
+  { shift_id: 's5', driver_id: 1, driver_name: DRIVERS[1], vehicle_id: 'v3', vehicle_code: 'moto3', started_at: hAgo(32), ended_at: hAgo(27),
+    start_odometer_km: 17900, end_odometer_km: null, distance_km: 0, source: 'odometer', odometer_source: null, flag: 'no_end', corrections: [] },
+];
+const fuelRow = (full_name, id) => {
+  const mine = MOCK_SHIFTS.filter((x) => x.driver_id === id);
+  const km = mine.reduce((a, x) => a + Number(x.distance_km), 0);
+  const hours = mine.reduce((a, x) => a + (new Date(x.ended_at) - new Date(x.started_at)) / 3600000, 0);
+  return {
+    driver_id: id, full_name,
+    shifts: mine.length, distance_km: km, hours: Math.round(hours * 10) / 10,
+    l_per_100km: 4, liters: km * 0.04, fuel_cost: km * 0.04 * 1.8,
+    ping_count: 0, gap_count: 0, sources: mine.length ? 'odometer' : '', own_paid_fuel: 0,
+  };
+};
+const RPC_HANDLERS = {
+  // Ίδιο σχήμα με το Statistics (driver_id, full_name, hours) + τα πεδία του FuelReport.
+  driver_distance_report: () => DRIVERS.map((n, id) => ({ ...DRIVER_HOURS_REPORT[id], ...fuelRow(n, id), hours: DRIVER_HOURS_REPORT[id].hours + fuelRow(n, id).hours })),
+  admin_shifts_in_range: () => MOCK_SHIFTS.map((x) => ({ ...x })),
+  admin_correct_shift_odometer: (a) => {
+    const sh = MOCK_SHIFTS.find((x) => x.shift_id === a.p_shift_id);
+    if (!sh) return { error: { message: 'Η βάρδια δεν βρέθηκε' } };
+    if (a.p_end_km !== null && a.p_end_km - a.p_start_km > 400) return { error: { message: 'Πάνω από 400 χλμ σε μία βάρδια δεν γίνονται δεκτά' } };
+    sh.corrections.unshift({ at: new Date().toISOString(), old_start: sh.start_odometer_km, old_end: sh.end_odometer_km,
+      new_start: a.p_start_km, new_end: a.p_end_km ?? sh.end_odometer_km, reason: a.p_reason });
+    sh.start_odometer_km = a.p_start_km;
+    if (a.p_end_km !== null) { sh.end_odometer_km = a.p_end_km; sh.distance_km = a.p_end_km - a.p_start_km; }
+    sh.odometer_source = 'admin';
+    sh.flag = null;
+    return { data: { shift_id: sh.shift_id, distance_km: sh.distance_km, vehicle_fixed: true, vehicle_km: a.p_end_km ?? a.p_start_km } };
+  },
+};
+
+supabase.rpc = (name, args) => {
+  const h = RPC_HANDLERS[name];
+  if (h) {
+    const r = h(args || {});
+    return Promise.resolve(r && (r.error || r.data !== undefined) ? { data: r.data ?? null, error: r.error ?? null } : { data: r, error: null });
+  }
+  return Promise.resolve({ data: RPCS[name] ?? [], error: null });
+};
 
 // ── Οι γεωγραφικές edge functions (06/09/2026) ──────────────────────────────
 // Ψεύτικες προτάσεις οδών ώστε να προβάλλεται η «Νέα Παραγγελία» χωρίς κλειδί

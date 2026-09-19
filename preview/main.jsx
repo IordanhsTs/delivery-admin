@@ -5,6 +5,7 @@ import Statistics from '../src/Statistics.jsx';
 import OrderSearch from '../src/OrderSearch.jsx';
 import BillingDashboard from '../src/BillingDashboard.jsx';
 import CashFloat from '../src/CashFloat.jsx';
+import FuelReport from '../src/FuelReport.jsx';
 import CreateOrder from '../src/CreateOrder.jsx';
 import { WorkloadChart } from '../src/LiveMap.jsx';
 import NavMockup from './NavMockup.jsx';
@@ -12,6 +13,7 @@ import '../src/index.css';
 import '../src/App.css';
 
 // ?tab=search → OrderSearch · ?tab=billing → Εκκαθάριση · ?tab=cash → Ταμείο
+// ?tab=fuel → Χιλιόμετρα & Καύσιμα (βάρδιες + διόρθωση)
 // ?tab=new → Νέα Παραγγελία (προτεινόμενες οδοί) · αλλιώς Statistics
 // Ο φόρτος ζει μέσα στον χάρτη, που θέλει login και Google Maps· εδώ
 // προβάλλεται σκέτος, με ιστορικό που κορυφώνεται στις ~65 παραγγελίες ώστε ο
@@ -40,7 +42,7 @@ const WorkloadPreview = () => (
   </div>
 );
 
-const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, new: CreateOrder, workload: WorkloadPreview, nav: NavMockup };
+const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, fuel: FuelReport, new: CreateOrder, workload: WorkloadPreview, nav: NavMockup };
 const Tab = TABS[new URLSearchParams(location.search).get('tab')] || Statistics;
 
 createRoot(document.getElementById('root')).render(

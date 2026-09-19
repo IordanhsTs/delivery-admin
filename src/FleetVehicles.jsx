@@ -72,6 +72,30 @@ function odometerBy(v) {
   return 'χωρίς δήλωση';
 }
 
+/**
+ * Τίτλος ειδοποίησης χιλιομέτρων. Το `suspect_km` (migration 0037) δεν έχει
+ * `gap_km` — σκόπιμα, ώστε να μη μετράει ως «χλμ εκτός βάρδιας» στην κάρτα
+ * της μηχανής· το μέγεθος βγαίνει από declared_km − previous_km.
+ */
+function alertTitle(a, { withCode = false } = {}) {
+  const prefix = withCode ? `${a.vehicle_code}: ` : '';
+  if (a.kind === 'rollback') return `${prefix}η ένδειξη γύρισε πίσω κατά ${km(Math.abs(a.gap_km))} χλμ`;
+  if (a.kind === 'suspect_km') {
+    return `${prefix}βάρδια με ${km(Number(a.declared_km) - Number(a.previous_km))} χλμ — δεν χρεώθηκε`;
+  }
+  return withCode
+    ? `${prefix}${km(a.gap_km)} χλμ χωρίς ανοιχτή βάρδια`
+    : `${km(a.gap_km)} χλμ εκτός βάρδιας`;
+}
+
+/** Η γραμμή κάτω από τον τίτλο — για το `suspect_km` εξηγεί τι σημαίνουν τα δύο νούμερα. */
+function alertDetail(a) {
+  if (a.kind === 'suspect_km') {
+    return `Έναρξη βάρδιας ${km(a.previous_km)} → επόμενη δήλωση ${km(a.declared_km)} χλμ · από ${a.driver_name || '—'} · ${fmtWhen(a.happened_at)} · διόρθωσέ την από «Χιλιόμετρα & Καύσιμα»`;
+  }
+  return `${km(a.previous_km)} → ${km(a.declared_km)} χλμ · δηλώθηκε από ${a.driver_name || '—'} · ${fmtWhen(a.happened_at)}`;
+}
+
 function num(v) {
   return v === '' || v === null || v === undefined ? null : Number(v);
 }
@@ -306,12 +330,10 @@ export default function FleetVehicles() {
                   style={{ border: '1px solid var(--border-subtle)' }}>
                 <div className="min-w-0">
                   <p className="m-0 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {a.kind === 'rollback'
-                      ? `${a.vehicle_code}: η ένδειξη γύρισε πίσω κατά ${km(Math.abs(a.gap_km))} χλμ`
-                      : `${a.vehicle_code}: ${km(a.gap_km)} χλμ χωρίς ανοιχτή βάρδια`}
+                    {alertTitle(a, { withCode: true })}
                   </p>
                   <p className="m-0 text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    {km(a.previous_km)} → {km(a.declared_km)} χλμ · δηλώθηκε από {a.driver_name || '—'} · {fmtWhen(a.happened_at)}
+                    {alertDetail(a)}
                   </p>
                 </div>
                 <button onClick={() => acknowledgeAlert(a.id)}
@@ -646,9 +668,7 @@ function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
                       style={{ border: '1px solid var(--danger-border)', backgroundColor: 'var(--danger-bg)' }}>
                     <div className="flex items-center justify-between gap-2">
                       <p className="m-0 text-sm font-bold" style={{ color: 'var(--danger)' }}>
-                        {a.kind === 'rollback'
-                          ? `Η ένδειξη γύρισε πίσω κατά ${km(Math.abs(a.gap_km))} χλμ`
-                          : `${km(a.gap_km)} χλμ εκτός βάρδιας`}
+                        {alertTitle(a)}
                       </p>
                       <button onClick={() => onAck(a.id)}
                         className="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0"
@@ -657,7 +677,7 @@ function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
                       </button>
                     </div>
                     <p className="m-0 text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                      {km(a.previous_km)} → {km(a.declared_km)} χλμ · δηλώθηκε από {a.driver_name || '—'} · {fmtWhen(a.happened_at)}
+                      {alertDetail(a)}
                     </p>
                   </li>
                 ))}
