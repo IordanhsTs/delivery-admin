@@ -68,7 +68,7 @@ export default function BillingDashboard() {
       supabase
         .from('orders')
         .select(`
-          id, created_at, status, store_id, driver_id,
+          id, created_at, status, store_id, driver_id, driver_payout,
           stores ( name, delivery_fee, category, driver_payout_override ),
           drivers ( full_name )
         `)
@@ -121,14 +121,12 @@ export default function BillingDashboard() {
 
   const COLORS = ['#C5A066', '#38EF7D', '#9D4EDD', '#60A5FA', '#FBBF24', '#F87171'];
 
-  // ── Αμοιβή διανομέα: ΕΝΤΕΛΩΣ ανεξάρτητη από τη χρέωση καταστήματος (07/09/2026) ──
-  // Παλιά η πληρωμή διανομέα ήταν storeRate − 0,05 σταθερό. Όταν ο διαχειριστής
-  // ανέβασε τη χρέωση φαγητού/ψιλικών στο 0,20 για τον ΦΠΑ, η πληρωμή διανομέα
-  // ακολούθησε αυτόματα στο 0,15 — κανείς δεν το ζήτησε, απλώς οι δύο τιμές
-  // ήταν δεμένες. Τώρα η αμοιβή διαβάζεται από το driver_category_rates
-  // (καρτέλα «Αμοιβές Διανομέων» στη Διαχείριση) ανά είδος καταστήματος, με
-  // δυνατότητα εξαίρεσης ανά συγκεκριμένο κατάστημα (stores.driver_payout_override,
-  // για ειδικές συμφωνίες) — βλ. migration 0033.
+  // ── ΜΟΝΟ ΓΙΑ ΤΟ FALLBACK ΤΟΥ DEPLOY (βλ. calculateFinancials παρακάτω) ─────
+  // Από το migration 0039 η αμοιβή έρχεται παγωμένη πάνω στην παραγγελία
+  // (orders.driver_payout) και ΔΕΝ υπολογίζεται εδώ. Αυτές οι τιμές μένουν
+  // μόνο για να μη δείξει μηδενικά μια στιγμή που το admin έχει ανέβει πριν
+  // τρέξει το migration. Όταν επιβεβαιωθεί ότι δεν υπάρχει ολοκληρωμένη
+  // παραγγελία χωρίς driver_payout, σβήσε ΚΑΙ αυτό ΚΑΙ το fallback.
   const [categoryRates, setCategoryRates] = useState({});
   useEffect(() => {
     supabase.from('driver_category_rates').select('category, rate').then(({ data, error }) => {
@@ -145,6 +143,7 @@ export default function BillingDashboard() {
     let totalStoreCharges = 0;
     let totalDriverPayouts = 0;
     let totalCompanyProfit = 0;
+    let legacyRows = 0;
     const storeBreakdown = {};
     const driverBreakdown = {};
 
@@ -152,10 +151,26 @@ export default function BillingDashboard() {
       const storeName = order.stores?.name || 'Άγνωστο Κατάστημα';
       const driverName = order.drivers?.full_name || 'Άγνωστος Οδηγός';
       const storeRate = order.stores?.delivery_fee || 0;
-      const override = order.stores?.driver_payout_override;
-      const driverPayout = override != null
-        ? Number(override)
-        : (categoryRates[order.stores?.category] ?? categoryRates.default ?? 0);
+      // ── Η αμοιβή έρχεται ΠΑΓΩΜΕΝΗ από την παραγγελία (migration 0039) ──────
+      // Δεν υπολογίζεται πια εδώ: το orders.driver_payout γράφτηκε από trigger
+      // τη στιγμή της ολοκλήρωσης, με τη συμφωνία που ίσχυε ΤΟΤΕ. Έτσι μια
+      // αλλαγή αμοιβής σε κατάστημα δεν μετακινεί πληρωμένες περιόδους.
+      //
+      // Το fallback αφορά ΜΟΝΟ το παράθυρο του deploy (migration πριν το admin,
+      // βλ. σχόλιο σελιδοποίησης παραπάνω για το τι κοστίζουν τα σιωπηλά λάθη
+      // εδώ μέσα). Μετράμε πόσες γραμμές το χρειάστηκαν και το ΛΕΜΕ — ένα
+      // σιωπηλό fallback θα ξαναζωντάνευε τον παλιό τύπο χωρίς να το πάρει
+      // κανείς είδηση, που είναι ακριβώς το bug της 21/09/2026.
+      let driverPayout;
+      if (order.driver_payout != null) {
+        driverPayout = Number(order.driver_payout);
+      } else {
+        legacyRows++;
+        const override = order.stores?.driver_payout_override;
+        driverPayout = override != null
+          ? Number(override)
+          : (categoryRates[order.stores?.category] ?? categoryRates.default ?? 0);
+      }
       // Το «μερίδιο εταιρείας» είναι πλέον απλά ό,τι απομένει — πληροφοριακό,
       // δεν καθορίζει καμία πληρωμή (αυτή έρχεται έτοιμη από πάνω).
       const companyShare = storeRate - driverPayout;
@@ -175,10 +190,24 @@ export default function BillingDashboard() {
       driverBreakdown[driverName].rates[driverPayout] += 1;
     });
 
-    return { totalStoreCharges, totalDriverPayouts, totalCompanyProfit, storeBreakdown, driverBreakdown };
+    return { totalStoreCharges, totalDriverPayouts, totalCompanyProfit, storeBreakdown, driverBreakdown, legacyRows };
   };
 
   const financials = calculateFinancials();
+
+  // Μία προειδοποίηση ανά φόρτωση, όχι ανά render: το calculateFinancials
+  // τρέχει σε κάθε ζωγράφισμα και θα γέμιζε την οθόνη με toasts.
+  const warnedRef = useRef(0);
+  useEffect(() => {
+    if (financials.legacyRows > 0 && warnedRef.current !== financials.legacyRows) {
+      warnedRef.current = financials.legacyRows;
+      toast.warning(
+        `${financials.legacyRows.toLocaleString('el-GR')} παραγγελίες δεν έχουν αποθηκευμένη αμοιβή και υπολογίστηκαν με τον παλιό τρόπο. `
+        + 'Αν μόλις έγινε deploy, λείπει το migration 0039.',
+        { duration: 10000 }
+      );
+    }
+  }, [financials.legacyRows]);
 
   const exportStoresToExcel = () => {
     const data = Object.keys(financials.storeBreakdown).map(store => ({

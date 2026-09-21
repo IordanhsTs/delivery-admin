@@ -7,6 +7,7 @@ import BillingDashboard from '../src/BillingDashboard.jsx';
 import CashFloat from '../src/CashFloat.jsx';
 import FuelReport from '../src/FuelReport.jsx';
 import CreateOrder from '../src/CreateOrder.jsx';
+import StoreManagement from '../src/StoreManagement.jsx';
 import { WorkloadChart } from '../src/LiveMap.jsx';
 import NavMockup from './NavMockup.jsx';
 import '../src/index.css';
@@ -14,7 +15,8 @@ import '../src/App.css';
 
 // ?tab=search → OrderSearch · ?tab=billing → Εκκαθάριση · ?tab=cash → Ταμείο
 // ?tab=fuel → Χιλιόμετρα & Καύσιμα (βάρδιες + διόρθωση)
-// ?tab=new → Νέα Παραγγελία (προτεινόμενες οδοί) · αλλιώς Statistics
+// ?tab=new → Νέα Παραγγελία (προτεινόμενες οδοί)
+// ?tab=stores → Διαχείριση (αμοιβή διανομέα ανά κατάστημα, 0039) · αλλιώς Statistics
 // Ο φόρτος ζει μέσα στον χάρτη, που θέλει login και Google Maps· εδώ
 // προβάλλεται σκέτος, με ιστορικό που κορυφώνεται στις ~65 παραγγελίες ώστε ο
 // άξονας y να βγάλει 20·40·60·80 — ακριβώς το παράδειγμα του πελάτη.
@@ -42,7 +44,7 @@ const WorkloadPreview = () => (
   </div>
 );
 
-const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, fuel: FuelReport, new: CreateOrder, workload: WorkloadPreview, nav: NavMockup };
+const TABS = { search: OrderSearch, billing: BillingDashboard, cash: CashFloat, fuel: FuelReport, new: CreateOrder, stores: StoreManagement, workload: WorkloadPreview, nav: NavMockup };
 const Tab = TABS[new URLSearchParams(location.search).get('tab')] || Statistics;
 
 createRoot(document.getElementById('root')).render(

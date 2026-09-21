@@ -251,7 +251,7 @@ export default function StoreManagement() {
         {[
           { key: 'stores',   label: 'Καταστήματα',       icon: Building2, count: stores.length },
           { key: 'couriers', label: 'Διανομείς (Οδηγοί)', icon: Bike,     count: couriers.length },
-          { key: 'rates',    label: 'Αμοιβές Διανομέων',  icon: Coins },
+          { key: 'rates',    label: 'Προτεινόμενες Αμοιβές',  icon: Coins },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className="px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition"
@@ -333,15 +333,14 @@ function EmptyState({ icon: Icon, title, text }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Αμοιβές διανομέων ανά είδος παραγγελίας (αίτημα πελάτη 07/09/2026)
+// Προτεινόμενες αμοιβές ανά είδος καταστήματος (αίτημα πελάτη 07/09/2026)
 //
-// Πριν, η πληρωμή διανομέα στην Εκκαθάριση ήταν δεμένη πάνω στη χρέωση
-// καταστήματος (storeRate − 0,05 σταθερό) — μια αλλαγή χρέωσης για ΦΠΑ άλλαζε
-// σιωπηλά και την πληρωμή διανομέα. Εδώ ορίζεται η αμοιβή ΑΠΕΥΘΕΙΑΣ, ανά είδος
-// καταστήματος, εντελώς ανεξάρτητα από τη χρέωση. Για ειδική συμφωνία με ΕΝΑ
-// συγκεκριμένο κατάστημα υπάρχει ξεχωριστό πεδίο στην ίδια την κάρτα του
-// καταστήματος (driver_payout_override, βλ. StoreDrawer παρακάτω) — αυτό εδώ
-// είναι μόνο η γενική προεπιλογή. Βλ. migration 0033.
+// ΑΛΛΑΞΕ ΡΟΛΟ ΣΤΙΣ 21/09/2026 (migration 0039): ΔΕΝ καθορίζουν πια πληρωμή.
+// Η αμοιβή ανήκει στη συμφωνία του κάθε καταστήματος (stores.driver_payout,
+// πεδίο στην κάρτα του καταστήματος) και παγώνει πάνω στην παραγγελία μόλις
+// αυτή ολοκληρωθεί. Οι τιμές εδώ είναι μόνο η ΠΡΟΣΥΜΠΛΗΡΩΣΗ ενός ΝΕΟΥ
+// καταστήματος — αλλαγή τους δεν αγγίζει κανένα υπάρχον κατάστημα ούτε καμία
+// παραγγελία, παλιά ή μελλοντική.
 const RATE_CATEGORIES = [
   ...STORE_CATEGORIES,
   { value: 'default', label: 'Χωρίς κατηγορία' },
@@ -414,13 +413,14 @@ function DriverRatesPanel() {
     <section className="p-4 space-y-4 max-w-2xl card-surface" style={cardStyle}>
       <div>
         <h3 className="font-bold text-sm flex items-center gap-2 m-0" style={{ color: 'var(--text-primary)' }}>
-          <Coins size={16} /> Αμοιβή διανομέα ανά παραγγελία
+          <Coins size={16} /> Προτεινόμενη αμοιβή για νέα καταστήματα
         </h3>
         <p className="text-[11px] m-0 mt-1.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
-          Πόσα παίρνει ο διανομέας για κάθε παραγγελία, ανά είδος καταστήματος —
-          ανεξάρτητο από τη χρέωση του καταστήματος. Για ειδική συμφωνία με ΕΝΑ
-          συγκεκριμένο κατάστημα, όρισέ το από την καρτέλα του καταστήματος στα
-          «Καταστήματα», όχι εδώ.
+          Η αμοιβή του διανομέα ορίζεται <strong>ανά κατάστημα</strong>, στην καρτέλα
+          του καταστήματος στα «Καταστήματα». Οι τιμές εδώ απλώς προσυμπληρώνουν
+          ένα <strong>νέο</strong> κατάστημα ανάλογα με το είδος του.
+          Αλλαγή τους <strong>δεν αλλάζει</strong> κανένα υπάρχον κατάστημα, καμία
+          παλιά παραγγελία και καμία μελλοντική πληρωμή.
         </p>
       </div>
 
@@ -509,9 +509,9 @@ function StoreCard({ store, index, onEdit }) {
         ) : (
           <Pill tone="warning" icon={MapPin}>Χωρίς θέση — δεν υπολογίζεται απόσταση</Pill>
         )}
-        {store.driver_payout_override != null ? (
-          <Pill tone="warning" icon={Coins} title="Ειδική συμφωνία — δεν ισχύει η γενική αμοιβή κατηγορίας">
-            Ειδική αμοιβή διανομέα: {eur(store.driver_payout_override)} €
+        {store.driver_payout != null ? (
+          <Pill tone="muted" icon={Coins} title="Η συμφωνία αυτού του καταστήματος — ισχύει για νέες παραγγελίες">
+            Αμοιβή διανομέα: {eur(store.driver_payout)} €
           </Pill>
         ) : null}
       </div>
@@ -799,13 +799,33 @@ function StoreDrawer({ store, onClose, onChanged }) {
     latitude: store.latitude ?? '',
     longitude: store.longitude ?? '',
     category: store.category || '',
-    driver_payout_override: store.driver_payout_override ?? '',
+    driver_payout: store.driver_payout ?? '',
     owner_phone: store.owner_phone || '',
     owner_email: store.owner_email || '',
     owner_afm: store.owner_afm || '',
   }));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Ζωντανός έλεγχος λογικής: χρέωση − αμοιβή = κέρδος εταιρείας ──────────
+  // ΓΙΑΤΙ ΥΠΑΡΧΕΙ: στις 05/09/2026 ένα καρφωτό μερίδιο εταιρείας 0,50 αντί για
+  // 0,05 έβγαζε ΑΡΝΗΤΙΚΟ μισθό επί μήνες χωρίς να το δει κανείς. Τώρα που τα
+  // δύο νούμερα μπαίνουν με το χέρι, ένα λάθος ψηφίο πρέπει να φαίνεται ΤΩΡΑ.
+  const feeNum = Number(String(form.delivery_fee).replace(',', '.'));
+  const payoutNum = Number(String(form.driver_payout).replace(',', '.'));
+  const eur2 = (n) => n.toFixed(2).replace('.', ',');
+  let payoutPreview = null;
+  if (Number.isFinite(feeNum) && Number.isFinite(payoutNum) && String(form.driver_payout).trim() !== '') {
+    const profit = feeNum - payoutNum;
+    payoutPreview = (
+      <p className="text-[11px] mt-1 mb-0 leading-snug"
+         style={{ color: profit < 0 ? '#F87171' : 'var(--text-muted)' }}>
+        {profit < 0
+          ? `⚠ Η αμοιβή ξεπερνά τη χρέωση: η εταιρεία χάνει ${eur2(Math.abs(profit))} € σε κάθε παραγγελία.`
+          : `Χρέωση ${eur2(feeNum)} € − αμοιβή ${eur2(payoutNum)} € = ${eur2(profit)} € στην εταιρεία (περιλαμβάνει ΦΠΑ).`}
+      </p>
+    );
+  }
 
   // Αποθηκεύει στοιχεία, χρέωση ΚΑΙ συντεταγμένες του καταστήματος.
   //
@@ -819,10 +839,14 @@ function StoreDrawer({ store, onClose, onChanged }) {
     const fee = Number(String(form.delivery_fee).replace(',', '.'));
     if (!Number.isFinite(fee) || fee < 0) { toast.error('Η χρέωση πρέπει να είναι θετικός αριθμός.'); return; }
 
-    const overrideRaw = String(form.driver_payout_override).trim();
-    const payoutOverride = overrideRaw === '' ? null : Number(overrideRaw.replace(',', '.'));
-    if (payoutOverride !== null && (!Number.isFinite(payoutOverride) || payoutOverride < 0)) {
-      toast.error('Η ειδική αμοιβή διανομέα πρέπει να είναι θετικός αριθμός ή κενή.');
+    // Η αμοιβή διανομέα είναι πλέον ΥΠΟΧΡΕΩΤΙΚΗ και ανήκει στο κατάστημα
+    // (migration 0039). Δεν κληρονομείται από το είδος τη στιγμή της πληρωμής:
+    // το είδος μόνο προσυμπληρώνει ένα ΝΕΟ κατάστημα.
+    const payoutRaw = String(form.driver_payout).trim();
+    if (payoutRaw === '') { toast.error('Η αμοιβή διανομέα είναι υποχρεωτική.'); return; }
+    const driverPayout = Number(payoutRaw.replace(',', '.'));
+    if (!Number.isFinite(driverPayout) || driverPayout < 0) {
+      toast.error('Η αμοιβή διανομέα πρέπει να είναι θετικός αριθμός.');
       return;
     }
 
@@ -848,7 +872,7 @@ function StoreDrawer({ store, onClose, onChanged }) {
       phone: form.phone.trim() || null,
       address: form.address.trim() || null,
       delivery_fee: fee,
-      driver_payout_override: payoutOverride,
+      driver_payout: driverPayout,
       latitude: lat,
       longitude: lng,
       category: form.category || null,
@@ -905,14 +929,18 @@ function StoreDrawer({ store, onClose, onChanged }) {
           </Field>
         </div>
 
-        {/* Εξαίρεση ΜΟΝΟ για αυτό το κατάστημα — π.χ. ειδική συμφωνία. Κενό
-            (προεπιλογή) = ισχύει η γενική αμοιβή κατηγορίας από την καρτέλα
-            «Αμοιβές Διανομέων» (βλ. migration 0033). */}
-        <Field label="Ειδική αμοιβή διανομέα (€, προαιρετικό)">
-          <input type="number" step="0.01" min="0" value={form.driver_payout_override}
-            onChange={(e) => set('driver_payout_override', e.target.value)}
-            placeholder="Κενό = γενική αμοιβή κατηγορίας"
+        {/* Η ΣΥΜΦΩΝΙΑ ΤΟΥ ΚΑΤΑΣΤΗΜΑΤΟΣ (migration 0039) — όχι «εξαίρεση».
+            Κάθε κατάστημα έχει δική του αμοιβή, ανεξάρτητη από τη χρέωση: η
+            χρέωση περιλαμβάνει ΦΠΑ και άλλα που δεν αφορούν τον διανομέα. */}
+        <Field label="Αμοιβή διανομέα ανά παραγγελία (€)">
+          <input type="number" step="0.01" min="0" value={form.driver_payout}
+            onChange={(e) => set('driver_payout', e.target.value)}
             className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
+          <p className="text-[11px] mt-1.5 mb-0 leading-snug" style={{ color: 'var(--text-muted)' }}>
+            Ισχύει για παραγγελίες <strong>από εδώ και πέρα</strong>. Οι ήδη ολοκληρωμένες
+            κρατούν την αμοιβή που είχαν όταν παραδόθηκαν και δεν αλλάζουν.
+          </p>
+          {payoutPreview}
         </Field>
       </section>
 

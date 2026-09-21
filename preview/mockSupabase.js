@@ -4,21 +4,30 @@
 // 05/09/2026: το mock είχε 5 καταστήματα και 4 διανομείς, οπότε δεν αναπαρήγαγε
 // τίποτα από όσα σπάνε στην πραγματικότητα — η πίτα με 36 κομμάτια, τα ονόματα
 // που δεν χωράνε στον άξονα, η ταξινόμηση. Πλέον καθρεφτίζει την παραγωγή:
-// 12 καφέ @ 0,15 € · 19 φαγητά @ 0,18 € · 5 ψιλικά @ 0,18 € · 11 διανομείς.
+// 12 καφέ · 19 φαγητά · 5 ψιλικά · 11 διανομείς.
+//
+// 21/09/2026 (migration 0039): η χρέωση φαγητού/ψιλικών είναι 0,20 € — μέσα
+// είναι ο ΦΠΑ που ενσωμάτωσε ο διαχειριστής — ενώ η αμοιβή διανομέα έμεινε
+// 0,13 €. Το DASH έχει χρέωση 0,17 € αντί 0,15 €, όπως στην παραγωγή: ήταν
+// ακριβώς αυτό που πρόδωσε το bug, γιατί ο παλιός τύπος `χρέωση − 0,05`
+// έβγαζε 0,12 € αντί για 0,10 €. Χωρίς αυτή την ανωμαλία μέσα στο mock, η
+// οθόνη θα έδειχνε σωστά νούμερα ακόμα κι αν ο κώδικας ήταν λάθος.
 const N = 4700;
+
+const PAYOUT = { coffee: 0.10, food: 0.13, kiosk: 0.13, default: 0.13 };
 
 const STORES = [
   ...['Believe', 'Central', 'Classic', 'DASH', 'Delicious', 'Light Bar',
       'Mocha', 'Panda', 'Piccolo', 'QR coffee', 'Sousou cafe', 'Ζυγός']
-    .map((name) => ({ name, delivery_fee: 0.15, category: 'coffee' })),
+    .map((name) => ({ name, delivery_fee: name === 'DASH' ? 0.17 : 0.15, category: 'coffee' })),
   ...['Pasta Bar', 'Rozzel', 'Mel’s creperie', 'Μπλε pita and more', 'Φιλαράκια',
       'Ουζερί Ακρόπολη', 'Burger House', 'Sushi Bar', 'Πίτα του Παππού', 'Gyros Time',
       'Το Στέκι', 'Λυκόστομο', 'Pizza Fan', 'Ψητοπωλείο Ο Μάκης', 'Σουβλάκι Express',
       'Noodle Bar', 'Crepa Loca', 'Στου Θωμά', 'Tandoori']
-    .map((name) => ({ name, delivery_fee: 0.18, category: 'food' })),
+    .map((name) => ({ name, delivery_fee: 0.20, category: 'food' })),
   ...['Ψιλικά Κέντρο', 'Mini Market Ν.', 'Περίπτερο Πλατείας', 'Kiosk 24h', 'Ψιλικά Στέλλα']
-    .map((name) => ({ name, delivery_fee: 0.18, category: 'kiosk' })),
-];
+    .map((name) => ({ name, delivery_fee: 0.20, category: 'kiosk' })),
+].map((s) => ({ ...s, driver_payout: PAYOUT[s.category] }));
 
 const DRIVERS = [
   'Παναγιώτης Κατσούτας', 'Ιορδάνης Τσουτσούλης', 'Λάζαρος Φωστηρόπουλος',
@@ -52,6 +61,10 @@ const ROWS = Array.from({ length: N }, (_, i) => {
     payment_method: i % 5 === 0 ? null : (i % 2 === 0 ? 'cash' : 'card'),
     store_id: storeId,
     driver_id: driverId,
+    // ΠΑΓΩΜΕΝΗ τη στιγμή της ολοκλήρωσης (migration 0039). Αντιγράφεται εδώ
+    // ΜΙΑ φορά· αν αλλάξεις μετά την αμοιβή του καταστήματος από την οθόνη,
+    // αυτές οι γραμμές ΔΕΝ πρέπει να κουνηθούν — αυτό ακριβώς δοκιμάζεται.
+    driver_payout: STORES[storeId].driver_payout,
     stores: {
       name: STORES[storeId].name,
       category: STORES[storeId].category,
@@ -64,12 +77,20 @@ const ROWS = Array.from({ length: N }, (_, i) => {
 function builder(table) {
   const q = {
     _from: 0, _to: 999,
-    select() { return q; },
-    eq() { return q; },
-    gte() { return q; },
-    lte() { return q; },
-    order() { return q; },
-    range(from, to) { q._from = from; q._to = to; return q; },
+    _patch: null, _eq: null,
+    // ΠΡΟΣΟΧΗ: κάθε κρίκος επιστρέφει το `proxied`, ΟΧΙ το `q` — αλλιώς η
+    // αλυσίδα βγαίνει από το Proxy στον πρώτο γνωστό τελεστή και ο επόμενος
+    // άγνωστος («.select().neq») σκάει πάλι.
+    select() { return proxied; },
+    // Η αποθήκευση καρτέλας καταστήματος (StoreDrawer) περνάει από εδώ. Χωρίς
+    // update()/eq() που κρατούν τιμές, το «Αποθήκευση» έδειχνε επιτυχία και δεν
+    // άλλαζε τίποτα — δηλαδή το harness θα «περνούσε» ό,τι κι αν έγραφα.
+    update(patch) { q._patch = patch; return proxied; },
+    eq(col, val) { q._eq = { col, val }; return proxied; },
+    gte() { return proxied; },
+    lte() { return proxied; },
+    order() { return proxied; },
+    range(from, to) { q._from = from; q._to = to; return proxied; },
     // Το Statistics διαβάζει τις ώρες λειτουργίας για τον ρυθμό παραγγελιών/ώρα
     // (06/09/2026). Χωρίς maybeSingle το harness έσκαγε πριν προλάβει να ζωγραφίσει.
     maybeSingle() {
@@ -78,8 +99,20 @@ function builder(table) {
     },
     then(resolve) { return Promise.resolve(q._run()).then(resolve); },
     _run() {
+      if (q._patch) {
+        // Μόνο ό,τι χρειάζεται το preview: ενημέρωση ΕΝΟΣ καταστήματος με id.
+        if (table === 'stores' && q._eq?.col === 'id') {
+          const row = STORES[q._eq.val];
+          if (row) Object.assign(row, q._patch);
+        }
+        return { data: null, error: null };
+      }
       if (table === 'stores') {
         return { data: STORES.map((s, id) => ({ id, ...s, latitude: 40.78, longitude: 21.41 })), error: null };
+      }
+      if (table === 'driver_category_rates') {
+        // Προτεινόμενες τιμές για ΝΕΟ κατάστημα (0039) — δεν πληρώνουν τίποτα.
+        return { data: Object.entries(PAYOUT).map(([category, rate]) => ({ category, rate })), error: null };
       }
       if (table === 'drivers') {
         return { data: DRIVERS.map((full_name, id) => ({ id, full_name })), error: null };
@@ -100,10 +133,47 @@ function builder(table) {
       return { data: ROWS.slice(q._from, q._from + size), error: null };
     },
   };
-  return q;
+  // Το PostgREST έχει δεκάδες τελεστές (neq, limit, in, is, ilike, single…) και
+  // κάθε οθόνη χρησιμοποιεί άλλους. Όποιος έλειπε έσκαγε ΟΛΟΚΛΗΡΗ την οθόνη με
+  // «.neq is not a function» — και μαζί έκρυβε αυτό που θέλαμε να δούμε. Ό,τι
+  // δεν ξέρουμε γίνεται κρίκος που δεν φιλτράρει: το preview δείχνει εμφάνιση
+  // και ροή, όχι ακρίβεια ερωτημάτων.
+  const proxied = new Proxy(q, {
+    get(t, prop) {
+      if (prop in t) return t[prop];
+      if (typeof prop === 'symbol') return undefined;
+      return () => proxied;
+    },
+  });
+  return proxied;
 }
 
 export const supabase = { from: (t) => builder(t) };
+
+// ── Ψεύτικη συνεδρία ────────────────────────────────────────────────────────
+// Χωρίς αυτό το harness έσκαγε με «Cannot read properties of undefined
+// (reading 'getSession')» και ζωγράφιζε ΛΕΥΚΗ σελίδα: οι οθόνες ελέγχουν τη
+// συνεδρία πριν φορτώσουν δεδομένα. Ο σκοπός του preview είναι ακριβώς να
+// βλέπουμε τις οθόνες ΧΩΡΙΣ χειροκίνητο login.
+// Το App.jsx ΑΠΟΚΩΔΙΚΟΠΟΙΕΙ το access_token και ψάχνει το claim `user_role`
+// (θετικός έλεγχος, allowlist). Ένα σκέτο string εδώ έριχνε τον έλεγχο στο
+// μεταβατικό fallback «είσαι driver/store;» → signOut → οθόνη login. Οπότε
+// χρειάζεται ΑΛΗΘΙΝΗ μορφή JWT — ανυπόγραφη, τοπικά δεν την ελέγχει κανείς.
+const FAKE_CLAIMS = { user_role: 'admin', company_schema: 'public', email: 'preview@vertex.local' };
+const FAKE_JWT = 'eyJhbGciOiJub25lIn0.'
+  + btoa(JSON.stringify(FAKE_CLAIMS)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  + '.preview';
+const FAKE_SESSION = {
+  access_token: FAKE_JWT, refresh_token: 'preview',
+  user: { id: 'preview-admin', email: 'preview@vertex.local', app_metadata: FAKE_CLAIMS },
+};
+supabase.auth = {
+  getSession:        () => Promise.resolve({ data: { session: FAKE_SESSION }, error: null }),
+  refreshSession:    () => Promise.resolve({ data: { session: FAKE_SESSION }, error: null }),
+  signInWithPassword:() => Promise.resolve({ data: { session: FAKE_SESSION }, error: null }),
+  signOut:           () => Promise.resolve({ error: null }),
+  onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+};
 export const getTenantSchema = () => 'public';
 export const isBackupMode = () => false;
 // Χωρίς αυτά τα δύο το harness πετούσε «does not provide an export named
