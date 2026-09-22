@@ -5,7 +5,7 @@ import { supabase, getTenantSchema } from './supabaseClient';
 import { liveChannel, skipFirst, forceWake } from './live';
 import { pushFailureReason, invokeWithAuthRetry } from './pushErrors';
 import { useTheme } from './ThemeContext.jsx';
-import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
+import { Building, MapPin, AlertTriangle, Bike, MessageSquare, Clock, X, Check, CheckCircle2, User, Users, ChevronDown, Timer, Flame, TrendingUp, BatteryWarning, BatteryLow, BatteryMedium, BatteryFull, Route, Repeat, Undo2, Hourglass, Package, Crosshair, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from './ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1056,6 +1056,68 @@ export default function LiveMap({ navHidden = false }) {
     }
   };
 
+  // ── Επιστροφή παραγγελίας στις ΕΝΕΡΓΕΣ ────────────────────────────────────
+  // ΓΙΑΤΙ (αίτημα πελάτη 22/09): η μετάθεση προϋποθέτει ότι ο διαχειριστής ξέρει
+  // ΣΕ ΠΟΙΟΝ θα δώσει την παραγγελία. Συχνά δεν το ξέρει — π.χ. βλέπει έναν νέο
+  // διανομέα να «τσιμπάει» σε ζωντανό χρόνο τις βολικές παραγγελίες και θέλει
+  // απλώς να την ξαναβάλει στο ταμπλό, να την πάρει όποιος είναι πραγματικά
+  // διαθέσιμος, με τη σειρά. Μέχρι τώρα οι μόνες διέξοδοι ήταν να τη φορτώσει σε
+  // κάποιον συγκεκριμένο ή να την ακυρώσει.
+  //
+  // ΔΕΝ πειράζουμε created_at/activated_at: ο χρόνος αναμονής συνεχίζει να τρέχει
+  // από την αρχή, οπότε η παραγγελία ανεβαίνει στην κορυφή της λίστας των
+  // διανομέων (ταξινόμηση κατά created_at αύξουσα) αντί να μοιάζει ολοκαίνουργια.
+  //
+  // Ο ΗΧΟΣ ΔΕΝ ΣΤΕΛΝΕΤΑΙ ΑΠΟ ΕΔΩ. Το trigger «Send Push on Order Release» στη βάση
+  // πιάνει πλέον και τη μετάβαση accepted → pending (migration 0040) και καλεί την
+  // ΙΔΙΑ send-order-notification με μια κανονική νέα παραγγελία: ίδιο κανάλι, ίδιος
+  // ήχος, σε όλους τους διανομείς. Ένα δεύτερο push από τον browser θα ήταν
+  // παράλληλη διαδρομή για το ίδιο πράγμα — και θα χτυπούσε δύο φορές.
+  const returnOrderToPending = async (orderId) => {
+    const order = orders.find(o => o.id === orderId);
+    const previousDriverId = order?.driver_id || null;
+
+    const isConfirmed = await confirmDialog(
+      order?.picked_up_at
+        ? 'Η παραγγελία έχει ΗΔΗ παραληφθεί από το κατάστημα. Σίγουρα επιστροφή στις ενεργές;'
+        : 'Επιστροφή της παραγγελίας στις ενεργές; Θα τη δουν ξανά όλοι οι διανομείς.',
+      { confirmLabel: 'Επιστροφή στις ενεργές' }
+    );
+    if (!isConfirmed) return;
+
+    // Το `picked_up_at` καθαρίζει μαζί: η παραλαβή αφορούσε τον διανομέα που τη
+    // χάνει. Αν έμενε, ο επόμενος θα έβρισκε στο κινητό του μια παραγγελία ήδη
+    // «παραληφθείσα» και δεν θα μπορούσε να πατήσει «Παραλαβή».
+    // Το `.eq('status','accepted')` είναι ο ίδιος φρουρός με τη μετάθεση: δεν
+    // επιστρέφουμε στις ενεργές κάτι που μόλις ολοκληρώθηκε ή ακυρώθηκε.
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ status: 'pending', driver_id: null, accepted_at: null, picked_up_at: null })
+      .eq('id', orderId)
+      .eq('status', 'accepted')
+      .select();
+
+    if (error) {
+      toast.error('Υπήρξε σφάλμα κατά την επιστροφή της παραγγελίας.');
+      console.error(error);
+      return;
+    }
+    if (!data || data.length === 0) {
+      toast.warning('Η παραγγελία δεν είναι πλέον σε κατάσταση «αποδεκτή» — η επιστροφή ακυρώθηκε.');
+      fetchActiveOrders();
+      return;
+    }
+
+    toast.success('Η παραγγελία επέστρεψε στις ενεργές.');
+    setReassigningOrderId(null);
+    // Ο διανομέας που την είχε ΠΡΕΠΕΙ να μάθει ότι δεν είναι πια δική του. Το push
+    // νέας παραγγελίας θα φτάσει και σε αυτόν, αλλά το «🛵 Νέα Παραγγελία» δεν λέει
+    // πουθενά ότι του την πήραν — θα συνέχιζε να οδηγεί προς τα εκεί.
+    if (previousDriverId) {
+      notifyDriverOfAssignment(orderId, previousDriverId, 'unassign');
+    }
+  };
+
   const cancelOrder = async (orderId) => {
     const isConfirmed = await confirmDialog("Είστε σίγουροι ότι θέλετε να ακυρώσετε τη συγκεκριμένη παραγγελία;", { danger: true, confirmLabel: 'Ακύρωση παραγγελίας' });
     if (!isConfirmed) return;
@@ -1613,7 +1675,7 @@ export default function LiveMap({ navHidden = false }) {
                         style={reassigningOrderId === order.id
                           ? { color: '#fff', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
                           : { color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)' }}
-                        title="Μετάθεση σε άλλον διανομέα"
+                        title="Μετάθεση σε άλλον διανομέα ή επιστροφή στις ενεργές"
                       >
                         <Repeat size={14} />
                       </button>
@@ -1671,6 +1733,22 @@ export default function LiveMap({ navHidden = false }) {
                             );
                           })
                         )}
+
+                        {/* ── Επιστροφή στις ενεργές ──────────────────────────
+                            Χωριστά από τη λίστα των διανομέων, γιατί δεν είναι
+                            «σε ποιον»: είναι «σε κανέναν, να την ξαναπάρει όποιος
+                            προλάβει». Ζει εδώ μέσα και όχι σαν τέταρτο κουμπί στη
+                            σειρά ενεργειών, ώστε η κάρτα να μη γεμίσει εικονίδια. */}
+                        <div className="h-px my-2" style={{ backgroundColor: 'var(--border-default)' }} />
+                        <button
+                          onClick={() => returnOrderToPending(order.id)}
+                          className="hover-row-glass flex items-center gap-1.5 w-full text-left p-2 rounded-md cursor-pointer text-xs transition-colors"
+                          style={{ backgroundColor: 'var(--bg-secondary)', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                          title="Η παραγγελία ξαναγίνεται ενεργή και τη βλέπουν ΟΛΟΙ οι διανομείς"
+                        >
+                          <Undo2 size={12} />
+                          <span className="font-bold">Επιστροφή στις ενεργές</span>
+                        </button>
                       </div>
                     )}
                   </motion.div>
