@@ -102,7 +102,7 @@ function num(v) {
 
 /** Κατάσταση service/εγγράφου → χρώμα + κείμενο. Ένας ορισμός, τρεις χρήσεις. */
 function serviceStatus(v) {
-  if (v.service_interval_km === null) return { tone: 'muted', text: 'Χωρίς κατώφλι' };
+  if (v.service_next_km === null) return { tone: 'muted', text: 'Χωρίς στόχο' };
   const left = Number(v.service_due_in_km);
   if (left <= 0) return { tone: 'danger', text: `Ξεπερασμένο κατά ${Math.abs(left).toFixed(0)} χλμ` };
   if (left <= SERVICE_WARN_KM) return { tone: 'warning', text: `Σε ${left.toFixed(0)} χλμ` };
@@ -251,7 +251,7 @@ export default function FleetVehicles() {
   // να ανοίγει μία-μία τις καρτέλες για να δει αν κάτι έληξε.
   const alerts = rows.filter((r) => r.is_active).reduce(
     (a, r) => {
-      if (r.service_interval_km !== null && Number(r.service_due_in_km) <= 0) a.service += 1;
+      if (r.service_next_km !== null && Number(r.service_due_in_km) <= 0) a.service += 1;
       if (r.insurance_expires_at && Number(r.insurance_days_left) <= EXPIRY_WARN_DAYS) a.insurance += 1;
       if (r.kteo_expires_at && Number(r.kteo_days_left) <= EXPIRY_WARN_DAYS) a.kteo += 1;
       return a;
@@ -465,7 +465,7 @@ function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
     model_year: vehicle.model_year ?? '',
     is_active: vehicle.is_active,
     odometer_base_km: vehicle.odometer_base_km ?? '',
-    service_interval_km: vehicle.service_interval_km ?? '',
+    service_next_km: vehicle.service_next_km ?? '',
     service_last_km: vehicle.service_last_km ?? '',
     service_last_at: vehicle.service_last_at || '',
     insurance_expires_at: vehicle.insurance_expires_at || '',
@@ -534,7 +534,7 @@ function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
       model_year: num(form.model_year),
       is_active: form.is_active,
       odometer_base_km: num(form.odometer_base_km) ?? 0,
-      service_interval_km: num(form.service_interval_km),
+      service_next_km: num(form.service_next_km),
       service_last_km: num(form.service_last_km),
       service_last_at: form.service_last_at || null,
       insurance_expires_at: form.insurance_expires_at || null,
@@ -755,9 +755,12 @@ function VehicleDetail({ vehicle, alerts = [], onAck, onClose, onChanged }) {
             <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Service &amp; έγγραφα</h3>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Service κάθε (χλμ)" hint="Άδειο = χωρίς αυτόματη προειδοποίηση.">
-                <input type="number" step="100" min="0" value={form.service_interval_km}
-                  onChange={(e) => set('service_interval_km', e.target.value)}
+              <Field
+                label="Επόμενο service στα (χλμ)"
+                hint="Απόλυτος στόχος — ό,τι είπε ο μηχανικός γι' αυτή τη μηχανή συγκεκριμένα, όχι σταθερό διάστημα. Άδειο = χωρίς αυτόματη προειδοποίηση."
+              >
+                <input type="number" step="1" min="0" value={form.service_next_km}
+                  onChange={(e) => set('service_next_km', e.target.value)}
                   className="w-full px-3 py-2 rounded-lg outline-none text-sm" style={inputStyle} />
               </Field>
               <Field label="Τελευταίο service στα (χλμ)">
@@ -892,8 +895,13 @@ function NotesSection({ vehicle, notes, loading, onSaved }) {
     }
 
     if (kind === 'service' && resetService) {
+      // Καθαρίζει ΚΑΙ τον επόμενο στόχο (service_next_km): μόλις έγινε service,
+      // ο παλιός στόχος είναι ήδη περασμένος και θα φώναζε «Ξεπερασμένο» για μια
+      // μηχανή που μόλις βγήκε από συνεργείο. Ο νέος στόχος είναι ξεχωριστή
+      // ενέργεια — ο διαχειριστής τον γράφει παρακάτω, στα «Στοιχεία μηχανής»,
+      // όταν του τον πει ο μηχανικός.
       const { error: e2 } = await supabase.from('fleet_vehicles')
-        .update({ service_last_km: atKmValue, service_last_at: day, updated_at: new Date().toISOString() })
+        .update({ service_last_km: atKmValue, service_last_at: day, service_next_km: null, updated_at: new Date().toISOString() })
         .eq('id', vehicle.id);
       if (e2) toast.error('Η σημείωση μπήκε, αλλά ο μετρητής service δεν ενημερώθηκε: ' + e2.message);
     }
@@ -949,7 +957,7 @@ function NotesSection({ vehicle, notes, loading, onSaved }) {
         {kind === 'service' ? (
           <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
             <input type="checkbox" checked={resetService} onChange={(e) => setResetService(e.target.checked)} />
-            Μέτρα αυτό ως το τελευταίο service (μηδενίζει τον μετρητή χιλιομέτρων)
+            Μέτρα αυτό ως το τελευταίο service (καθαρίζει και τον επόμενο στόχο — θα τον ξαναγράψεις στα «Στοιχεία μηχανής» μόλις σου τον πει ο μηχανικός)
           </label>
         ) : null}
 
