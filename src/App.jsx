@@ -299,6 +299,11 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
+  // Modules ενεργά για ΤΗΝ εταιρία αυτού του admin (π.χ. Ταμείο), αποφασισμένα
+  // από τον ιδιοκτήτη μέσω του VERTEX HQ (public.company_modules, migration
+  // 0042). Προεπιλογή false — ασφαλές γιατί η οθόνη μένει πίσω από το
+  // sessionLoading μέχρι να ξέρουμε την πραγματική τιμή, ποτέ δεν φαίνεται.
+  const [cashFloatEnabled, setCashFloatEnabled] = useState(false);
   // ΟΧΙ σκέτο 'map': μετά από pull-to-refresh στο κινητό ο διαχειριστής πρέπει να
   // ξαναβρεί την ενότητα που κοίταζε, όχι τον χάρτη (βλ. restoreTab στο backNav).
   const [activeTab, setActiveTab] = useState(() => restoreTab('map', NAV_IDS));
@@ -346,6 +351,23 @@ export default function App() {
   const isDark = theme === 'dark';
   const navHidden = activeTab === 'map' && !navOpenOnMap;
 
+  // Μενού φιλτραρισμένο κατά module — το Ταμείο λείπει εντελώς από τα
+  // Οικονομικά αν ο ιδιοκτήτης δεν το έχει ενεργοποιήσει για αυτή την εταιρία.
+  const menuItems = cashFloatEnabled
+    ? NAV_ITEMS
+    : NAV_ITEMS.map((item) =>
+        item.id === 'finance'
+          ? { ...item, children: item.children.filter((c) => c.id !== 'cash-float') }
+          : item
+      );
+
+  // Παράγωγη τιμή αντί για setState σε effect: αν έμεινε αποθηκευμένη ενότητα
+  // 'cash-float' από ΠΡΙΝ ο ιδιοκτήτης απενεργοποιήσει το module (restoreTab τη
+  // διαβάζει πριν προλάβουμε να ξέρουμε cashFloatEnabled), το render απλά τη
+  // αντικαθιστά — δεν χρειάζεται να διορθώσουμε το ίδιο το activeTab state.
+  const effectiveActiveTab =
+    !cashFloatEnabled && activeTab === 'cash-float' ? 'map' : activeTab;
+
   useEffect(() => {
     // Διαβάζει τα claims από το JWT (ίδιο μοτίβο με το applyTenantFromSession).
     const readClaims = (session) => {
@@ -371,7 +393,19 @@ export default function App() {
       // είναι driver/store = admin». Ο hook εισάγει το claim από τον πίνακα memberships.
       if (typeof claims.user_role === 'string') {
         const isAdmin = claims.user_role === 'admin';
-        if (!isAdmin) await supabase.auth.signOut();
+        if (!isAdmin) {
+          await supabase.auth.signOut();
+        } else {
+          // public schema (όχι το tenant-scoped `supabase` default) — RLS
+          // περιορίζει αυτόματα στη γραμμή ΤΗΣ ΔΙΚΗΣ ΤΟΥ εταιρίας (company_id
+          // claim). Καμία γραμμή = module ανενεργό.
+          const { data: moduleRows, error: moduleErr } = await supabase
+            .schema('public')
+            .from('company_modules')
+            .select('module_key, enabled');
+          if (moduleErr) console.error('[modules] αποτυχία φόρτωσης:', moduleErr.message);
+          setCashFloatEnabled(!!moduleRows?.find((m) => m.module_key === 'cash_float')?.enabled);
+        }
         setIsAuthenticated(isAdmin);
         setSessionLoading(false);
         return;
@@ -445,7 +479,7 @@ export default function App() {
 
   // ── Nav button style helper ──────────────────────────────────────────────
   const getNavStyle = (tabId) =>
-    activeTab === tabId
+    effectiveActiveTab === tabId
       ? {
           background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))',
           color: '#fff',
@@ -493,13 +527,13 @@ export default function App() {
             style={{ borderColor: 'var(--border-default)' }}
           >
             <nav className="flex-1 flex items-stretch gap-1">
-              {NAV_ITEMS.map((item) => {
+              {menuItems.map((item) => {
                 const isGroup = !!item.children;
                 let style;
                 if (isGroup) {
                   style = mobileOpenGroup === item.id
                     ? { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 2px 8px var(--accent-muted)' }
-                    : findNavParent(activeTab)?.id === item.id
+                    : findNavParent(effectiveActiveTab)?.id === item.id
                       ? { background: 'var(--accent-muted)', color: 'var(--accent)' }
                       : { background: 'transparent', color: 'var(--text-secondary)' };
                 } else {
@@ -517,7 +551,7 @@ export default function App() {
                       {/* Κουκκίδα στην ίδια την κατηγορία όταν είναι μαζεμένη — ο
                           αριθμός/κουκκίδα του παιδιού φαίνεται όταν ανοίξει. */}
                       {item.id === 'actions' && mobileOpenGroup !== 'actions' && <UnreadMessagesBadge dot />}
-                      {item.id === 'finance' && mobileOpenGroup !== 'finance' && <LowCashFloatBadge />}
+                      {item.id === 'finance' && mobileOpenGroup !== 'finance' && cashFloatEnabled && <LowCashFloatBadge />}
                     </span>
                     <span className="text-[9px] font-semibold leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
                       {(item.fullLabel || '').split(' ')[0]}
@@ -546,7 +580,7 @@ export default function App() {
                 className="absolute left-2 right-2 top-full mt-1 z-40 rounded-2xl overflow-hidden p-1.5 card-surface"
                 style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xl)' }}
               >
-                {NAV_ITEMS.find((n) => n.id === mobileOpenGroup)?.children.map(({ id, Icon, fullLabel }) => (
+                {menuItems.find((n) => n.id === mobileOpenGroup)?.children.map(({ id, Icon, fullLabel }) => (
                   <button
                     key={id}
                     onClick={() => selectTab(id)}
@@ -655,7 +689,7 @@ export default function App() {
 
         {/* Nav items — 5 κατηγορίες, 3 με ανοιγόμενα παιδιά (accordion) */}
         <nav className="hidden md:flex md:flex-col p-3 gap-1 md:flex-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {menuItems.map((item) => {
             if (!item.children) {
               return (
                 <button
@@ -683,7 +717,7 @@ export default function App() {
             }
 
             const isOpen = !!expandedGroups[item.id];
-            const parentActive = findNavParent(activeTab)?.id === item.id;
+            const parentActive = findNavParent(effectiveActiveTab)?.id === item.id;
             return (
               <div key={item.id}>
                 <button
@@ -694,7 +728,7 @@ export default function App() {
                   <span className="relative flex items-center">
                     <item.Icon />
                     {item.id === 'actions' && !isOpen && <UnreadMessagesBadge dot />}
-                    {item.id === 'finance' && !isOpen && <LowCashFloatBadge />}
+                    {item.id === 'finance' && !isOpen && cashFloatEnabled && <LowCashFloatBadge />}
                   </span>
                   <span className="text-sm font-semibold flex-1">{item.fullLabel}</span>
                   <span style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
@@ -882,7 +916,7 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="h-full"
               >
-                {VIEW_COMPONENTS[activeTab]}
+                {VIEW_COMPONENTS[effectiveActiveTab]}
               </motion.div>
             </AnimatePresence>
           )}

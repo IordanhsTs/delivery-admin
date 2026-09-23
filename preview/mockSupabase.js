@@ -114,6 +114,15 @@ function builder(table) {
         // Προτεινόμενες τιμές για ΝΕΟ κατάστημα (0039) — δεν πληρώνουν τίποτα.
         return { data: Object.entries(PAYOUT).map(([category, rate]) => ({ category, rate })), error: null };
       }
+      if (table === 'company_modules') {
+        // Ίδιο grandfather clause με την παραγωγή (migration 0042): το preview
+        // δείχνει το Ταμείο ενεργό εξ ορισμού, όπως η μοναδική σημερινή εταιρία.
+        // ΣΗΜΕΙΩΣΗ: αυτό το preview mount (main.jsx) δεν περνάει ΠΟΤΕ από το
+        // πραγματικό App.jsx/verifyAdminSession — τα tabs μπαίνουν standalone
+        // (βλ. TABS map). Αυτό το fixture υπάρχει προληπτικά, όχι επειδή κάτι
+        // εδώ το διαβάζει σήμερα.
+        return { data: [{ module_key: 'cash_float', enabled: true }], error: null };
+      }
       if (table === 'drivers') {
         return { data: DRIVERS.map((full_name, id) => ({ id, full_name })), error: null };
       }
@@ -149,6 +158,10 @@ function builder(table) {
 }
 
 export const supabase = { from: (t) => builder(t) };
+// company_modules ζει στο public schema, όχι στο tenant-scoped default — το
+// πραγματικό App.jsx κάνει .schema('public').from(...) γι' αυτό. Το mock είναι
+// flat (κανένα πραγματικό schema), οπότε απλά αγνοεί το όνομα.
+supabase.schema = () => ({ from: (t) => builder(t) });
 
 // ── Ψεύτικη συνεδρία ────────────────────────────────────────────────────────
 // Χωρίς αυτό το harness έσκαγε με «Cannot read properties of undefined
