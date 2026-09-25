@@ -74,6 +74,10 @@ const LEDGER_KINDS = {
     label: 'Ανεφοδιασμός', Icon: PlusCircle, sign: '+', amountColor: 'var(--success)',
     badge: { color: 'var(--success)', backgroundColor: 'var(--success-bg)', border: '1px solid var(--success-border)' },
   },
+  correction: {
+    label: 'Διόρθωση', Icon: Undo2, sign: '−', amountColor: 'var(--danger)',
+    badge: { color: 'var(--danger)', backgroundColor: 'var(--danger-bg)', border: '1px solid var(--danger-border)' },
+  },
   cash: {
     label: 'Δήλωση POS', Icon: Wallet, sign: '−', amountColor: 'var(--text-primary)',
     badge: { color: 'var(--accent)', backgroundColor: 'var(--accent-muted)' },
@@ -83,6 +87,12 @@ const LEDGER_KINDS = {
     badge: { color: 'var(--warning)', backgroundColor: 'var(--warning-bg)', border: '1px solid var(--warning-border)' },
   },
 };
+// Ένα «topup» με αρνητικό ποσό είναι διόρθωση/αφαίρεση (0035), όχι πραγματικός
+// ανεφοδιασμός — ίδιος πίνακας, διαφορετική παρουσίαση.
+function ledgerKindFor(r) {
+  if (r.kind === 'topup' && Number(r.amount) < 0) return LEDGER_KINDS.correction;
+  return LEDGER_KINDS[r.kind] || LEDGER_KINDS.cash;
+}
 const subtleBtn = {
   backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)',
 };
@@ -225,22 +235,28 @@ export default function CashFloat() {
     fetchPending();
   }
 
-  // ── Ανεφοδιασμός ──────────────────────────────────────────────────────────
+  // ── Ανεφοδιασμός / Διόρθωση ──────────────────────────────────────────────
+  // Το ίδιο RPC (admin_add_cash_topup) δέχεται πλέον και αρνητικό ποσό (0035) —
+  // «Διόρθωση» είναι απλώς το ίδιο ποσό με αντίθετο πρόσημο, για όταν το
+  // φυσικό ταμείο έχει λιγότερα λεφτά απ' όσα υπολογίζει η βάση (π.χ. μετά από
+  // χειροκίνητη μέτρηση).
+  const [topupMode, setTopupMode] = useState('add'); // 'add' | 'subtract'
   const [topupAmount, setTopupAmount] = useState('');
   const [topupNote, setTopupNote] = useState('');
   const [addingTopup, setAddingTopup] = useState(false);
 
   async function addTopup(e) {
     e.preventDefault();
-    const amount = parseFloat(String(topupAmount).replace(',', '.'));
-    if (!(amount > 0)) { toast.error('Βάλε ένα έγκυρο ποσό.'); return; }
+    const magnitude = parseFloat(String(topupAmount).replace(',', '.'));
+    if (!(magnitude > 0)) { toast.error('Βάλε ένα έγκυρο ποσό.'); return; }
+    const amount = topupMode === 'subtract' ? -magnitude : magnitude;
     setAddingTopup(true);
     const { error } = await supabase.rpc('admin_add_cash_topup', {
       p_amount: amount, p_note: topupNote.trim() || null,
     });
     setAddingTopup(false);
-    if (error) { toast.error('Ο ανεφοδιασμός απέτυχε: ' + error.message); return; }
-    toast.success('Ο ανεφοδιασμός καταχωρήθηκε.');
+    if (error) { toast.error('Η καταχώρηση απέτυχε: ' + error.message); return; }
+    toast.success(topupMode === 'subtract' ? 'Η αφαίρεση καταχωρήθηκε.' : 'Ο ανεφοδιασμός καταχωρήθηκε.');
     setTopupAmount('');
     setTopupNote('');
     refreshOverview();
@@ -409,26 +425,46 @@ export default function CashFloat() {
         </motion.div>
       )}
 
-      {/* ── Ανεφοδιασμός ─────────────────────────────────────────────────── */}
+      {/* ── Ανεφοδιασμός / Διόρθωση ──────────────────────────────────────── */}
       <div className="p-5 mb-6 card-surface" style={card}>
         <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <PlusCircle size={18} /> Προσθήκη ανεφοδιασμού
+          <PlusCircle size={18} /> Ανεφοδιασμός ή διόρθωση ταμείου
         </h3>
+        <div className="flex gap-2 mb-3">
+          <button type="button" onClick={() => setTopupMode('add')}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+            style={topupMode === 'add'
+              ? { backgroundColor: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)' }
+              : subtleBtn}>
+            <PlusCircle size={14} /> Ανεφοδιασμός (+)
+          </button>
+          <button type="button" onClick={() => setTopupMode('subtract')}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+            style={topupMode === 'subtract'
+              ? { backgroundColor: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)' }
+              : subtleBtn}>
+            <Undo2 size={14} /> Αφαίρεση / διόρθωση (−)
+          </button>
+        </div>
         <form onSubmit={addTopup} className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Ποσό (€)</label>
-            <input type="number" step="0.01" min="0" required value={topupAmount}
+            <input type="number" step="0.01" min="0.01" required value={topupAmount}
               onChange={(e) => setTopupAmount(e.target.value)}
               className="px-3 py-2 rounded-lg w-32 outline-none" style={inputStyle} />
           </div>
           <div className="flex-1 min-w-[180px]">
-            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Σημείωση (προαιρετικό)</label>
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+              Σημείωση {topupMode === 'subtract' ? '(γράψε γιατί γίνεται η διόρθωση)' : '(προαιρετικό)'}
+            </label>
             <input type="text" value={topupNote} onChange={(e) => setTopupNote(e.target.value)} maxLength={200}
               className="w-full px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           </div>
           <button type="submit" disabled={addingTopup}
-            className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50" style={accentBtn}>
-            <PlusCircle size={16} /> {addingTopup ? 'Καταχώρηση…' : 'Προσθήκη'}
+            className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 text-white disabled:opacity-50"
+            style={topupMode === 'subtract' ? { backgroundColor: 'var(--danger)' } : accentBtn}>
+            {topupMode === 'subtract' ? <Undo2 size={16} /> : <PlusCircle size={16} />}
+            {addingTopup ? 'Καταχώρηση…' : topupMode === 'subtract' ? 'Αφαίρεση' : 'Προσθήκη'}
           </button>
         </form>
       </div>
@@ -593,6 +629,11 @@ export default function CashFloat() {
                             <PlusCircle size={11} /> Ανεφοδιασμός {eur(day.topup)} €
                           </span>
                         )}
+                        {day.topup < 0 && (
+                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+                            <Undo2 size={11} /> Διόρθωση −{eur(Math.abs(day.topup))} €
+                          </span>
+                        )}
                         {(day.cash > 0 || day.fuel > 0) && (
                           <span style={{ color: 'var(--text-primary)' }}>
                             Σύνολο ημέρας {eur(day.cash + day.fuel)} €
@@ -603,7 +644,7 @@ export default function CashFloat() {
                   </tr>
 
                   {day.rows.map((r) => {
-                  const kind = LEDGER_KINDS[r.kind] || LEDGER_KINDS.cash;
+                  const kind = ledgerKindFor(r);
                   return (
                   <tr key={`${r.kind}-${r.id}`} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                     <td className="px-4 py-3">
@@ -617,7 +658,7 @@ export default function CashFloat() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3 font-bold" style={{ color: kind.amountColor }}>
-                      {kind.sign}{eur(r.amount)} €
+                      {kind.sign}{eur(Math.abs(r.amount))} €
                     </td>
                     <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{prettyDateTime(r.created_at)}</td>
                     <td className="px-4 py-3 truncate max-w-[220px]" style={{ color: 'var(--text-secondary)' }} title={r.note || ''}>

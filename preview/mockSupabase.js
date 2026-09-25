@@ -272,6 +272,21 @@ const RPC_HANDLERS = {
   // Ίδιο σχήμα με το Statistics (driver_id, full_name, hours) + τα πεδία του FuelReport.
   driver_distance_report: () => DRIVERS.map((n, id) => ({ ...DRIVER_HOURS_REPORT[id], ...fuelRow(n, id), hours: DRIVER_HOURS_REPORT[id].hours + fuelRow(n, id).hours })),
   admin_shifts_in_range: () => MOCK_SHIFTS.map((x) => ({ ...x })),
+  // Ανεφοδιασμός/διόρθωση ταμείου (0035) — stateful ώστε η νέα γραμμή να φανεί
+  // πραγματικά στο ιστορικό (ledgerKindFor διαβάζει το πρόσημο του amount).
+  admin_add_cash_topup: (a) => {
+    if (a.p_amount === 0 || a.p_amount === null || a.p_amount === undefined) {
+      return { error: { message: 'Μη έγκυρο ποσό' } };
+    }
+    const id = 't' + Date.now();
+    CASH_LEDGER.unshift({
+      kind: 'topup', id, driver_id: null, driver_name: null,
+      amount: a.p_amount, original_amount: null, note: a.p_note ?? null,
+      created_at: new Date().toISOString(), edited_at: null,
+      entry_date: new Date().toISOString().slice(0, 10),
+    });
+    return { data: id };
+  },
   admin_correct_shift_odometer: (a) => {
     const sh = MOCK_SHIFTS.find((x) => x.shift_id === a.p_shift_id);
     if (!sh) return { error: { message: 'Η βάρδια δεν βρέθηκε' } };
